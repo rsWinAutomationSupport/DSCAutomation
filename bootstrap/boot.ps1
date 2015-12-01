@@ -96,8 +96,8 @@ Param
 )
 
 #########################################################################################################
-# Local environment configuration
-#region##################################################################################################
+#region Local environment configuration
+#########################################################################################################
 
 # Bootstrap log configuration
 $TimeDate = (Get-Date -Format ddMMMyyyy_hh-mm-ss).ToString()
@@ -143,16 +143,13 @@ $objACE = New-Object System.Security.AccessControl.FileSystemAccessRule `
 $objACL = Get-ACL -Path $InstallPath
 $objACL.RemoveAccessRuleAll($objACE) 
 Set-ACL $InstallPath $objACL
-
-#Write-Verbose "Saving provided parameters to $InstallPath\BootParameters.xml"
-#$PSBoundParameters | Export-Clixml -Path "$InstallPath\BootParameters.xml" -Force
-
 #endregion
-#########################################################################################################
-# Bootstrap DSC Configuration definitions for Pull Server (PullBoot) and Client (ClientBoot)
-#region##################################################################################################
 
-# Initial Pull Server DSC Configuration
+#########################################################################################################
+#region Bootstrap DSC Configuration definitions for Pull Server (PullBoot) and Client (ClientBoot)
+#########################################################################################################
+
+#region Initial Pull Server DSC Configuration
 Configuration PullBoot
 {  
     param 
@@ -470,7 +467,8 @@ Configuration PullBoot
         }
     } 
 }
-
+#endregion
+#region Initial Client DSC Configuration
 Configuration ClientBoot 
 {  
     param 
@@ -800,7 +798,7 @@ Configuration ClientBoot
         }
     } 
 }
-
+#endregion
 function Install-PlatformModules 
 {
 # We cannot run this code directly until the rsPlatform module is installed, 
@@ -825,12 +823,14 @@ function Install-PlatformModules
 #endregion
 
 #########################################################################################################
-# Helper functions
-#region##################################################################################################
+#region Helper functions
+#########################################################################################################
+
+#endregion
 
 #########################################################################################################
-# Create a task to persist bootstrap accross reboots
-#region##################################################################################################
+#region Create a task to persist bootstrap accross reboots
+#########################################################################################################
 Write-Verbose "Preparing to create 'DSCBoot' task"
 
 # Setup a variable to hold parameters with which bootstrap was invoked for use as part of task action
@@ -853,8 +853,8 @@ Register-ScheduledTask DSCBoot -InputObject $Task
 #endregion
 
 #########################################################################################################
-# Download & install rsBoot module
-#region##################################################################################################
+#region Download & install rsBoot module
+#########################################################################################################
 Write-Verbose "Checking connectivity to '$NetworkTestTarget'..."
 if (-not (Test-Connection $NetworkTestTarget -Quiet))
 {
@@ -901,8 +901,8 @@ Import-Module -Name $BootModuleName -Force
 #endregion
 
 #########################################################################################################
-# Execute pre-bootstrap scripts
-#region##################################################################################################
+#region Execute pre-bootstrap scripts
+#########################################################################################################
 if ($BootParameters.PreBoot -ne $null)
 {
     Invoke-PreBootScript -Scripts $BootParameters.PreBoot -Verbose
@@ -910,8 +910,8 @@ if ($BootParameters.PreBoot -ne $null)
 #endregion
 
 #########################################################################################################
-# Execute main bootstrap process
-#region##################################################################################################
+#region Execute main bootstrap process
+#########################################################################################################
 # Set folder for DSC boot mof files
 $DSCbootMofFolder = (Join-Path $WinTemp -ChildPath DSCBootMof)
 
@@ -955,7 +955,7 @@ if ($PullServerConfig)
     $CertThumbprint = (Get-ChildItem Cert:\LocalMachine\My | 
                         Where-Object -FilterScript {$_.Subject -eq "CN=$PullServerAddress"}).Thumbprint
     
-    # Procecss bootstrap parameters and save only settings we need to commit to config file
+    # Procecss bootstrap parameters and save only settings we need to commit to the main configuration file
     $SettingKeyFilterSet = @(
                              "SharedKey",
                              "InstallPath",
@@ -976,7 +976,7 @@ if ($PullServerConfig)
         }
     }
 
-    # Encrypt just the values of each setting using pull server's certificate and save to disk
+    # Encrypt the values of each setting using pull server's certificate and save to disk
     Protect-DSCAutomationSettings -CertThumbprint $CertThumbprint -Settings $DSCSettings -Path "$InstallPath\DSCAutomationSettings.xml" -Verbose
 
     $PullServerDSCConfigPath = "$InstallPath\$GitRepoName\$PullServerConfig"
