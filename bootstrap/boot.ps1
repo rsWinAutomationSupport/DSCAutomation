@@ -935,6 +935,9 @@ if ($PullServerConfig)
     if( -not ($PullServerAddress) -or ($PullServerAddress -as [ipaddress]))
     {
         $PullServerAddress = $env:COMPUTERNAME
+
+        # Add the PullServeraddress value to the BootParameters set - needed for adding to config file later
+        $BootParameters.Add('PullServerAddress',$PullServerAddress)
     }
 
     Write-Verbose "Configuring WinRM listener"
