@@ -209,3 +209,42 @@ function Unprotect-DSCAutomationSettings
     }
     return $DecryptedSettings
 }
+
+<#
+.Synopsis
+   Retrieve the decrypted string from an encrypted databag.
+.DESCRIPTION
+   Uses Unprotect-DSCAutomationSettings to decrypt the databag and retrieve the plain-text value for the specified setting.
+.EXAMPLE
+   Get-DSCSetting 'NodeInfoPath'
+.EXAMPLE
+   Get-DSCSetting -Key 'PullServerAddress' -Path 'C:\folder\file.xml'
+#>
+function Get-DSCSetting
+{
+    [CmdletBinding()]
+    Param
+    (
+        # Key help description
+        [Parameter(Mandatory=$true,
+                   ValueFromPipelineByPropertyName=$true,
+                   Position=0)]
+        $Key,
+        # Path help description
+        [Parameter(Mandatory=$false,
+                   ValueFromPipelineByPropertyName=$true,
+                   Position=1)]
+        [string]
+        $Path
+    )
+    
+    if ($PSBoundParameters.ContainsKey('Path'))
+    {
+        $DSCSettings = Unprotect-DSCAutomationSettings -Path $Path
+    }
+    else
+    {
+        $DSCSettings = Unprotect-DSCAutomationSettings
+    }
+    $DSCSettings[$Key].GetNetworkCredential().Password
+}
