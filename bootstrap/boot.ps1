@@ -77,7 +77,7 @@ Param
 
     # URL for the Zip file to download the main DSCAutomation module
     [string]
-    $BootModuleZipURL = "https://github.com/rsWinAutomationSupport/DSCAutomation/archive/master.zip",
+    $BootModuleZipURL = "https://github.com/rsWinAutomationSupport/DSCAutomation/archive/staging.zip",
 
     [string]
     $BootModuleName = "DSCAutomation",
