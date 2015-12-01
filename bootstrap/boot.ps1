@@ -891,10 +891,10 @@ Rename-Item "$WinTemp\$ZipRootName" -NewName "$WinTemp\$BootModuleName"
 $ModuleFolder = Join-Path $PSModuleLocation -Childpath $BootModuleName
 if (Test-Path "$PSModuleLocation\$BootModuleName")
 {
-    Write-Verbose "Found existing rsBoot module instance, removing it..."
+    Write-Verbose "Found existing $BootModuleName module instance, removing it..."
     Remove-Item -Path "$PSModuleLocation\$BootModuleName" -Recurse -Force
 }
-Write-Verbose "Installing DSCAutomation module"
+Write-Verbose "Installing $BootModuleName module"
 Move-Item -Path "$WinTemp\$BootModuleName" -Destination $PSModuleLocation
 Write-Verbose "Importing $ModuleName module"
 Import-Module -Name $BootModuleName -Force
