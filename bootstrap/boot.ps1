@@ -936,7 +936,7 @@ if ($BootParameters.PreBoot -ne $null)
 # Set folder for DSC boot mof files
 $DSCbootMofFolder = (Join-Path $WinTemp -ChildPath DSCBootMof)
 
-# Build the full bootstrap parameter set as a hashtable
+# Build the full bootstrap parameter set as a hashtable for use later
 $BootParameters = @{}
 ($MyInvocation.MyCommand.Parameters).Keys | 
     Foreach {$value = (Get-Variable -Name $_ -EA SilentlyContinue).Value
@@ -949,21 +949,14 @@ $BootParameters = @{}
 # Determine if we're building a Pull server or a client
 if ($PullServerConfig)
 {
-    ##############################################################
+    Write-Verbose "##############################################################"
     Write-Verbose "Initiating DSC Pull Server bootstrap..."
-    ##############################################################
+    Write-Verbose "##############################################################"
 
     if( -not ($PullServerAddress) -or ($PullServerAddress -as [ipaddress]))
     {
         $PullServerAddress = $env:COMPUTERNAME
     }
-
-    <# Need $pullserver_config parameter/variable
-    Write-Secrets -PullServerAddress $PullServerAddress `
-                  -PullServer_config $PullServerConfig `
-                  -BootParameters $BootParameters `
-                  -Path $DefaultInstallPath
-    #>
 
     Write-Verbose "Configuring WinRM listener"
     Enable-WinRM
@@ -971,10 +964,10 @@ if ($PullServerConfig)
     Write-Verbose "Starting Pull Server Boot DSC configuration run"
     PullBoot -BootParameters $BootParameters -OutputPath $DSCbootMofFolder
 
-    Write-Verbose "Set Pull Server LCM"
+    Write-Verbose "Applying initial Pull Server boot LCM configuration"
+    Set-DscLocalConfigurationManager -Path $DSCbootMofFolder -Verbose
 
-    #Set-DscLocalConfigurationManager -Path $DSCbootMofFolder -Verbose
-
+    Write-Verbose "Applying initial Pull Server Boot configuration"
     Start-DscConfiguration -Path $DSCbootMofFolder -Wait -Verbose -Force
     Write-Verbose "Running DSC config to install extra DSC modules as defined in rsPlatform configuration"
     #Install-PlatformModules
@@ -1027,9 +1020,9 @@ if ($PullServerConfig)
 }
 else
 {
-    ##############################################################
+    Write-Verbose "##############################################################"
     Write-Verbose "Initiating DSC Client bootstrap..."
-    ##############################################################
+    Write-Verbose "##############################################################"
     <#
     # Will hold Client configuration values to store in $NodeInfoPath
     $NodeInfo = @{}
