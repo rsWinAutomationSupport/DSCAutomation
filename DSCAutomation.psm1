@@ -150,7 +150,6 @@ function Protect-DSCAutomationSettings
     
     # Save the encrypted databag as a native PS hashtable object
     Write-Verbose "Saving encrypted settings file to $Path"
-    #$DSCAutomationSettings | Export-Clixml -Path $Path -Force
     Export-Clixml -InputObject $DSCAutomationSettings -Path $Path -Force
 }
 
