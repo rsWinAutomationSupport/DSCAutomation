@@ -231,35 +231,13 @@ Configuration PullBoot
             Arguments = "/VERYSILENT /DIR $($BootParameters.GitInstallDir)"
             Ensure    = 'Present'
         }
-        Script SetGitPath
+        Environment GitPath
         {
-            SetScript = {
-                $GitBinPath = (Join-Path $($using:BootParameters.GitInstallDir) "bin")
-                Write-Verbose "Setting Git executable path to $GitBinPath"
-                if (-not(Test-Path $GitBinPath))
-                {
-                    Throw "Git bin folder was not found - check that git client is actualy installed"
-                }
-                $currentPath = ([System.Environment]::GetEnvironmentVariable("Path","Machine")).Split(";")
-                if (-not($currentPath.Contains($GitBinPath)))
-                {
-                    $env:Path = $env:Path + ";$GitBinPath"
-                    [Environment]::SetEnvironmentVariable( "Path", $env:Path, [System.EnvironmentVariableTarget]::Machine )
-                }
-                else
-                {
-                    Write-Verbose "Global path variable already contains $GitBinPath"
-                }
-            }
-            TestScript = {
-                $env:path = [System.Environment]::GetEnvironmentVariable("Path","Machine")
-                return [bool](Get-Command git.exe -ErrorAction SilentlyContinue)
-                 
-            }
-            GetScript = {
-                @{EnvPath = $([System.Environment]::GetEnvironmentVariable("Path","Machine")) }
-            }
-            DependsOn = '[Package]InstallGit'
+            Ensure    = "Present"
+            Name      = "Path"
+            Value     = (Join-Path $($BootParameters.GitInstallDir) "bin")
+            Path      = $true
+            DependsOn = "[Package]InstallGit"
         }
         Script UpdateGitConfig 
         {
@@ -292,7 +270,7 @@ Configuration PullBoot
                 $GitConfig = & git config --list
                 @{"Result" = $($GitConfig -match $env:COMPUTERNAME)}
             }
-            DependsOn = '[Script]SetGitPath'
+            DependsOn = '[Environment]GitPath'
         }
         Script Clone_rsConfigs 
         {
@@ -363,7 +341,7 @@ Configuration PullBoot
                 {
                     $PullServerAddress = $env:COMPUTERNAME
                 }
-                Import-Module -Name rsBoot -Force
+                Import-Module -Name $using:BootParameters.BootModuleName -Force
 
                 Get-ChildItem -Path Cert:\LocalMachine\My\ |
                 Where-Object -FilterScript {$_.Subject -eq "CN=$PullServerAddress"} | 
@@ -501,7 +479,8 @@ Configuration ClientBoot
         [string] $PullServerName,
         [int] $PullServerPort,
         [string] $InstallPath,
-        [string] $NodeInfoPath
+        [string] $NodeInfoPath,
+        [string] $BootModuleName
     )
     node $env:COMPUTERNAME 
     {
@@ -569,7 +548,7 @@ Configuration ClientBoot
         Script CreateEncryptionCertificate 
         {
             SetScript = {
-                Import-Module -Name rsBoot
+                Import-Module -Name $using:BootModuleName
                 $EndDate = (Get-Date).AddYears(25) | Get-Date -Format MM/dd/yyyy
                 $CertificateSubject = "CN=$($env:COMPUTERNAME)_enc"
 
@@ -915,7 +894,7 @@ if (Test-Path "$PSModuleLocation\$BootModuleName")
     Write-Verbose "Found existing rsBoot module instance, removing it..."
     Remove-Item -Path "$PSModuleLocation\$BootModuleName" -Recurse -Force
 }
-Write-Verbose "Installing rsBoot module"
+Write-Verbose "Installing DSCAutomation module"
 Move-Item -Path "$WinTemp\$BootModuleName" -Destination $PSModuleLocation
 Write-Verbose "Importing $ModuleName module"
 Import-Module -Name $BootModuleName -Force
