@@ -239,7 +239,7 @@ function Get-DSCSettingValue
         [string]
         $Path
     )
-    
+    # Decrypt contents ofthe DSCAutomation configuration file
     if ($PSBoundParameters.ContainsKey('Path'))
     {
         $DSCSettings = Unprotect-DSCAutomationSettings -Path $Path
@@ -248,6 +248,7 @@ function Get-DSCSettingValue
     {
         $DSCSettings = Unprotect-DSCAutomationSettings
     }
+    # Retrieve the plain-text value for each setting that is part of $Key parameter
     $Result = @{}
     foreach ($Item in $Key)
     {
