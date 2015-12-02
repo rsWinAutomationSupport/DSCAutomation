@@ -104,7 +104,12 @@ function Protect-DSCAutomationSettings
         # Contents of the settings file
         [Parameter(Mandatory=$true)]
         [hashtable]
-        $Settings
+        $Settings,
+
+        # Force overwirte of existing settings file
+        [Parameter(Mandatory=$false)]
+        [switch]
+        $Force = $false
     )
 
     # Create the certificate object whith which to secure the AES key
@@ -140,8 +145,8 @@ function Protect-DSCAutomationSettings
         $DSCAutomationSettings += $result
     }
     
-    # Make a backup in case of there being an existing settings file
-    if (Test-Path $Path)
+    # Make a backup in case of there being an existing settings file - skip of Force switch set
+    if ((Test-Path $Path) -and ($Force -ne $true))
     {
         Write-Verbose "Existing settings file found - making a backup..."
         $TimeDate = (Get-Date -Format ddMMMyyyy_hhmmss).ToString()
