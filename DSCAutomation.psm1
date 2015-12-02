@@ -216,11 +216,11 @@ function Unprotect-DSCAutomationSettings
 .DESCRIPTION
    Uses Unprotect-DSCAutomationSettings to decrypt the databag and retrieve the plain-text value for the specified setting.
 .EXAMPLE
-   Get-DSCSetting 'NodeInfoPath'
+   Get-DSCSettingValue 'NodeInfoPath'
 .EXAMPLE
-   Get-DSCSetting -Key 'PullServerAddress' -Path 'C:\folder\file.xml'
+   Get-DSCSettingValue -Key 'PullServerAddress' -Path 'C:\folder\file.xml'
 #>
-function Get-DSCSetting
+function Get-DSCSettingValue
 {
     [CmdletBinding()]
     Param
