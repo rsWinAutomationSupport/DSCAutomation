@@ -952,7 +952,7 @@ if ($PullServerConfig)
     Write-Verbose "Applying initial Pull Server Boot configuration"
     Start-DscConfiguration -Path $DSCbootMofFolder -Wait -Verbose -Force
     Write-Verbose "Running DSC config to install extra DSC modules as defined in rsPlatform configuration"
-    #Install-PlatformModules
+    Install-PlatformModules
 
     # Create Pull server configuration file
     $CertThumbprint = (Get-ChildItem Cert:\LocalMachine\My | 
