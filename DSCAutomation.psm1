@@ -219,6 +219,8 @@ function Unprotect-DSCAutomationSettings
    Get-DSCSettingValue 'NodeInfoPath'
 .EXAMPLE
    Get-DSCSettingValue -Key 'PullServerAddress' -Path 'C:\folder\file.xml'
+.EXAMPLE
+   Get-DSCSettingValue -Key 'NodeInfoPath', 'GitRepoName'
 #>
 function Get-DSCSettingValue
 {
@@ -246,5 +248,18 @@ function Get-DSCSettingValue
     {
         $DSCSettings = Unprotect-DSCAutomationSettings
     }
-    $DSCSettings[$Key].GetNetworkCredential().Password
+    $Result = @{}
+    foreach ($Item in $Key)
+    {
+        if ($DSCSettings[$Item] -ne $null)
+        {
+            $Value = $DSCSettings[$Item].GetNetworkCredential().Password
+            $Result[$Item] = $Value
+        }
+        else
+        {
+            $Result[$Item] = $null
+        }
+    }
+    return $Result
 }
