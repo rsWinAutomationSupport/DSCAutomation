@@ -623,7 +623,7 @@ Configuration ClientBoot
         Script GetPullPublicCert 
         {
             SetScript = {
-                $Uri = "https://",$using:PullServerAddress,":",$using:PullServerPort -join ''
+                $Uri = "https://$($using:PullServerAddress):$($using:PullServerPort)"
                 Write-Verbose "Trying to connect to $Uri"
                 do 
                 {
@@ -670,7 +670,7 @@ Configuration ClientBoot
                 $store.Close()
             }
             TestScript = {
-                $Uri = "https://",$using:PullServerAddress,":",$using:PullServerPort -join ''
+                $Uri = "https://$($using:PullServerAddress):$($using:PullServerPort)"
                 Write-Verbose "Contacting $Uri"
                 do 
                 {
@@ -713,7 +713,7 @@ Configuration ClientBoot
                 }
             }
             GetScript = {
-                $Uri = "https://",$using:PullServerAddress,":",$using:PullServerPort -join ''
+                $Uri = "https://$($using:PullServerAddress):$($using:PullServerPort)"
                 $webRequest = [Net.WebRequest]::Create($uri)
                 try 
                 {
