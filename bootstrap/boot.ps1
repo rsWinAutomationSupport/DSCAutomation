@@ -853,7 +853,7 @@ Register-ScheduledTask DSCBoot -InputObject $Task
 #endregion
 
 #########################################################################################################
-#region Download & install rsBoot module
+#region Download & install the bootstrap PS module
 #########################################################################################################
 Write-Verbose "Checking connectivity to '$NetworkTestTarget'..."
 if (-not (Test-Connection $NetworkTestTarget -Quiet))
@@ -915,7 +915,7 @@ if ($BootParameters.PreBoot -ne $null)
 # Set folder for DSC boot mof files
 $DSCbootMofFolder = (Join-Path $WinTemp -ChildPath DSCBootMof)
 
-# Build the full bootstrap parameter set as a hashtable for use later
+# Build the full bootstrap parameter set ($BootParameters) as a hashtable for use later
 $BootParameters = @{}
 ($MyInvocation.MyCommand.Parameters).Keys | 
     Foreach {$value = (Get-Variable -Name $_ -EA SilentlyContinue).Value
@@ -936,7 +936,7 @@ if ($PullServerConfig)
     {
         $PullServerAddress = $env:COMPUTERNAME
 
-        # Add the PullServeraddress value to the BootParameters set - needed for adding to config file later
+        # Add the PullServeraddress value to the BootParameters set
         $BootParameters.Add('PullServerAddress',$PullServerAddress)
     }
 
@@ -989,7 +989,6 @@ if ($PullServerConfig)
     }
     Write-Verbose "Executing final Pull server DSC script from configuration repository"
     Write-Verbose "Configuration file: $PullServerDSCConfigPath"
-    <#
     try
     {
         & "$PullServerDSCConfigPath" -Verbose
@@ -998,7 +997,6 @@ if ($PullServerConfig)
     {
         Write-Verbose "Error in Pull Server DSC configuration: $($_.Exception)"
     }
-    #>
 }
 else
 {
