@@ -269,3 +269,25 @@ function Get-DSCSettingValue
     }
     return $Result
 }
+
+function Get-DSCClientRegistrationCert
+{
+    [CmdletBinding()]
+    Param
+    (
+        # Name of the regstration certificate
+        [string]
+        $ClientRegCertName
+    )
+    # Try to identify the cert name if one was not provided
+    if (-not ($PSBoundParameters.ContainsKey('ClientRegCertName')))
+    {
+        $ClientRegCertName = (Get-DSCSettingValue "ClientRegCertName").ClientRegCertName
+    }
+    
+    $RegCertThumbprint = (Get-ChildItem -Path Cert:\LocalMachine\My\ | Where-Object -FilterScript {$_.Subject -eq "CN=$ClientRegCertName"}).Thumbprint
+
+    $Cert = [System.Convert]::ToBase64String((Get-Item Cert:\LocalMachine\My\$RegCertThumbprint).Export('PFX', ''))
+
+    return $Cert
+}
