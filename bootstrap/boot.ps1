@@ -154,7 +154,8 @@ Configuration PullBoot
 {  
     param 
     (
-        [hashtable] $BootParameters
+        [hashtable] $BootParameters,
+        [string] $ClientRegCertName = "DSC Client Registraiton Cert"
     )
     node $env:COMPUTERNAME 
     {
@@ -382,6 +383,109 @@ Configuration PullBoot
                 return @{
                     'Result' = (Get-ChildItem -Path Cert:\LocalMachine\My\ | 
                                 Where-Object -FilterScript {$_.Subject -eq "CN=$PullServerAddress"}).Thumbprint
+                }
+            }
+        }
+        #Create Client registration certificate (Shared secret replacement)
+        Script CreateRegistrationCertificate 
+        {
+            SetScript = {
+                $ClientRegCertName = $using:ClientRegCertName
+                Import-Module -Name $using:BootParameters.BootModuleName -Force
+
+                Write-Verbose "Checking for exisitng registration cert"
+                $ExisitngRegistrationCert = Get-ChildItem -Path Cert:\LocalMachine\My\ | Where-Object -FilterScript {$_.Subject -eq "CN=$ClientRegCertName"}
+                if ($ExisitngRegistrationCert -eq $null)
+                {
+                    Write-Verbose "Generating client Registration certificate..."
+                    $EndDate = (Get-Date).AddYears(25) | Get-Date -Format MM/dd/yyyy
+                    New-SelfSignedCertificateEx -Subject "CN=$ClientRegCertName" `
+                                                -NotAfter $EndDate `
+                                                -StoreLocation LocalMachine `
+                                                -StoreName My `
+                                                -Exportable `
+                                                -KeyLength 2048
+                }
+                else
+                {
+                    Write-Verbose "Existing registration cert found"
+                }
+                
+                Write-Verbose "Checking validity of current registration cert"
+                if (-not $ExisitngRegistrationCert.verify())
+                {
+                    $PublicKey = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2
+                    $PublicKey.Import($ExisitngRegistrationCert.RawData)
+                    $Store = Get-item Cert:\LocalMachine\Root\
+                    $Store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+                    $Store.Add($PublicKey)
+                    $Store.Close()
+                }
+                else
+                {
+                    Write-Verbose "Client Registration certificate is valid"
+                }
+                
+                Write-Verbose "Checking that current registration cert is in Trusted store"
+                $TrustedRegistrationCert = Get-ChildItem -Path Cert:\LocalMachine\TrustedPeople\ | Where-Object -FilterScript {$_.Subject -eq "CN=$ClientRegCertName"}
+                if ($ExisitngRegistrationCert.Thumbprint -ne $TrustedRegistrationCert.Thumbprint)
+                {
+                    if ($TrustedRegistrationCert -ne $null)
+                    {
+                        Write-Verbose "Removing existing trusted cert..."
+                        Get-ChildItem -Path Cert:\LocalMachine\TrustedPeople\ | 
+                        Where-Object -FilterScript {$_.Subject -eq "CN=$ClientRegCertName"} | 
+                        Remove-Item
+                    }
+                    Write-Verbose "Copying the new certificate to trusted store..."
+                    $PublicKey = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2
+                    $PublicKey.Import($ExisitngRegistrationCert.RawData)
+                    $Store = Get-item Cert:\LocalMachine\TrustedPeople\
+                    $Store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+                    $Store.Add($PublicKey)
+                    $Store.Close()
+                }
+                else
+                {
+                    Write-Verbose "Client Registration certificate is already in system TrustedPeople cert store"
+                }
+            }
+            TestScript = {
+                $ClientRegCertName = $using:ClientRegCertName
+                $ExisitngRegistrationCert = Get-ChildItem -Path Cert:\LocalMachine\My\ | Where-Object -FilterScript {$_.Subject -eq "CN=$ClientRegCertName"}
+                if ($ExisitngRegistrationCert -ne $null)
+                {
+                    if ($ExisitngRegistrationCert.verify())
+                    {
+                        $TrustedRegistrationCert = Get-ChildItem -Path Cert:\LocalMachine\TrustedPeople\ | Where-Object -FilterScript {$_.Subject -eq "CN=$ClientRegCertName"}
+                        if ($ExisitngRegistrationCert.Thumbprint -eq $TrustedRegistrationCert.Thumbprint)
+                        {
+                            return $true
+                        }
+                        else
+                        {
+                            Write-Verbose "Client Registration certificate cannot be verified - not in system TrustedPeople cert store"
+                            return $false
+                        }
+                
+                    }
+                    else
+                    {
+                        Write-Verbose "Client Registration certificate cannot be verified - not in system ROOT cert store"
+                        return $false
+                    }
+                }
+                else
+                {
+                    Write-Verbose "Client Registration certificate not found"
+                    return $false
+                }
+            }
+            GetScript = {
+                $ClientRegCertName = $using:ClientRegCertName
+                return @{
+                    'Result' = (Get-ChildItem -Path Cert:\LocalMachine\My\ | 
+                                Where-Object -FilterScript {$_.Subject -eq "CN=$ClientRegCertName"}).Thumbprint
                 }
             }
         }
