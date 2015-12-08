@@ -155,7 +155,7 @@ Configuration PullBoot
     param 
     (
         [hashtable] $BootParameters,
-        [string] $ClientRegCertName = "DSC Client Registraiton Cert"
+        [string] $ClientRegCertName = "DSC Client Registration Cert"
     )
     node $env:COMPUTERNAME 
     {
@@ -331,7 +331,7 @@ Configuration PullBoot
             DependsOn = '[File]rsPlatformDir'
         }
         #Creates PullServer Certificate that resides on DSC endpoint
-        Script CreateServerCertificate 
+        Script CreatePullServerCertificate 
         {
             SetScript = {
                 $PullServerAddress = $using:BootParameters.PullServerAddress
@@ -341,21 +341,52 @@ Configuration PullBoot
                 }
                 Import-Module -Name $using:BootParameters.BootModuleName -Force
 
-                Get-ChildItem -Path Cert:\LocalMachine\My\ |
-                Where-Object -FilterScript {$_.Subject -eq "CN=$PullServerAddress"} | 
-                Remove-Item
-                
-                $EndDate = (Get-Date).AddYears(25) | Get-Date -Format MM/dd/yyyy
-                New-SelfSignedCertificateEx -Subject "CN=$PullServerAddress" `
-                                            -NotAfter $EndDate `
-                                            -StoreLocation LocalMachine `
-                                            -StoreName My `
-                                            -Exportable `
-                                            -KeyLength 2048
-                
-                # Export public key we just created
-                $PullCert = Get-ChildItem Cert:\LocalMachine\My | Where-Object -FilterScript {$_.Subject -eq "CN=$PullServerAddress"}
-                Export-Certificate -Cert $PullCert -FilePath (Join-Path $using:BootParameters.InstallPath -childpath "$PullServerAddress.cer") -Force
+                Write-Verbose "Checking for exisitng pull server cert"
+                $PullCert = Get-ChildItem -Path Cert:\LocalMachine\My\ | Where-Object -FilterScript {$_.Subject -eq "CN=$PullServerAddress"}
+                if ($PullCert -eq $null)
+                {
+                    Write-Verbose "Generating pull server certificate..."
+                    $EndDate = (Get-Date).AddYears(25) | Get-Date -Format MM/dd/yyyy
+                    New-SelfSignedCertificateEx -Subject "CN=$PullServerAddress" `
+                                                -NotAfter $EndDate `
+                                                -StoreLocation LocalMachine `
+                                                -StoreName My `
+                                                -Exportable `
+                                                -KeyLength 2048
+                    # Update the cert object for use later in the process
+                    $PullCert = Get-ChildItem -Path Cert:\LocalMachine\My\ | Where-Object -FilterScript {$_.Subject -eq "CN=$PullServerAddress"}
+                }
+                else
+                {
+                    Write-Verbose "Existing pull server cert found"
+                }
+                Write-Verbose "Checking validity of current pull server cert"
+                $RootStorePullCert = Get-ChildItem -Path Cert:\LocalMachine\Root\ | Where-Object -FilterScript {$_.Subject -eq "CN=$PullServerAddress"}
+                if ($PullCert.Thumbprint -ne $RootStorePullCert.Thumbprint)
+                {
+                    if ($RootStorePullCert -ne $null)
+                    {
+                        Write-Verbose "Removing existing matching certs in root store..."
+                        Get-ChildItem -Path Cert:\LocalMachine\Root\ | 
+                        Where-Object -FilterScript {$_.Subject -eq "CN=$PullServerAddress"} | 
+                        Remove-Item
+                    }
+                    Write-Verbose "Copying registration cert to root store..."
+                    $PublicKey = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2
+                    $PublicKey.Import($PullCert.RawData)
+                    $Store = Get-item Cert:\LocalMachine\Root\
+                    $Store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::ReadWrite)
+                    $Store.Add($PublicKey)
+                    $Store.Close()
+                }
+                else
+                {
+                    Write-Verbose "Pull server certificate is valid"
+                }
+                # Always force an export of pull cert's public key when Set runs
+                $PublicKeyFile = (Join-Path $using:BootParameters.InstallPath -childpath "$PullServerAddress.cer")
+                Write-Verbose "Exporting pull server cert public key to $PublicKeyFile..."
+                Export-Certificate -Cert $PullCert -FilePath $PublicKeyFile -Force
             }
             TestScript = {
                 $PullServerAddress = $using:BootParameters.PullServerAddress
@@ -363,14 +394,34 @@ Configuration PullBoot
                 {
                     $PullServerAddress = $env:COMPUTERNAME
                 }
-                $ExisitngPullCert = Get-ChildItem -Path Cert:\LocalMachine\My\ | Where-Object -FilterScript {$_.Subject -eq "CN=$PullServerAddress"} 
-                $ExisitngPullCertPubKey = Test-Path (Join-Path $using:BootParameters.InstallPath -childpath "$PullServerAddress.cer")
-                if( $ExisitngPullCert -and $ExisitngPullCertPubKey) 
+                Write-Verbose "Checking for Pull server certificate..."
+                $ExisitngCert = Get-ChildItem -Path Cert:\LocalMachine\My\ | Where-Object -FilterScript {$_.Subject -eq "CN=$PullServerAddress"}
+                if ($ExisitngCert -ne $null)
                 {
-                    return $true
+                    Write-Verbose "Pull server certificate found, checking for cert in root cert store..."
+                    $RootStorePullCert = Get-ChildItem -Path Cert:\LocalMachine\root\ | Where-Object -FilterScript {$_.Subject -eq "CN=$PullServerAddress"}
+                    if ($ExisitngCert.Thumbprint -eq $RootStorePullCert.Thumbprint)
+                    {
+                        $PublicKeyFile = (Join-Path $using:BootParameters.InstallPath -childpath "$PullServerAddress.cer")
+                        if ( -not (Test-Path $PublicKeyFile))
+                        {
+                            Write-Verbose "Missing pull cert public key file"
+                            return $false
+                        }
+                        else
+                        {
+                            return $true
+                        }
+                    }
+                    else
+                    {
+                        Write-Verbose "Pull server certificate not found in system ROOT cert store"
+                        return $false
+                    }
                 }
-                else 
+                else
                 {
+                    Write-Verbose "Pull server certificate not found"
                     return $false
                 }
             }
@@ -390,9 +441,7 @@ Configuration PullBoot
         Script CreateRegistrationCertificate 
         {
             SetScript = {
-                $ClientRegCertName = $using:ClientRegCertName
-                Import-Module -Name $using:BootParameters.BootModuleName -Force
-
+                # Check that we have a registration cert
                 Write-Verbose "Checking for exisitng registration cert"
                 $ExisitngRegistrationCert = Get-ChildItem -Path Cert:\LocalMachine\My\ | Where-Object -FilterScript {$_.Subject -eq "CN=$ClientRegCertName"}
                 if ($ExisitngRegistrationCert -eq $null)
@@ -405,15 +454,27 @@ Configuration PullBoot
                                                 -StoreName My `
                                                 -Exportable `
                                                 -KeyLength 2048
+                    # Update the existing cert object for use later in the process
+                    $ExisitngRegistrationCert = Get-ChildItem -Path Cert:\LocalMachine\My\ | Where-Object -FilterScript {$_.Subject -eq "CN=$ClientRegCertName"}
                 }
                 else
                 {
                     Write-Verbose "Existing registration cert found"
                 }
-                
+                # Check that existing cert is valid and exists in root
                 Write-Verbose "Checking validity of current registration cert"
-                if (-not $ExisitngRegistrationCert.verify())
+                $RootRegistrationCert = Get-ChildItem -Path Cert:\LocalMachine\Root\ | Where-Object -FilterScript {$_.Subject -eq "CN=$ClientRegCertName"}
+                if ($ExisitngRegistrationCert.Thumbprint -ne $RootRegistrationCert.Thumbprint)
                 {
+                    
+                    if ($RootRegistrationCert -ne $null)
+                    {
+                        Write-Verbose "Removing existing matching certs in root store..."
+                        Get-ChildItem -Path Cert:\LocalMachine\Root\ | 
+                        Where-Object -FilterScript {$_.Subject -eq "CN=$ClientRegCertName"} | 
+                        Remove-Item
+                    }
+                    Write-Verbose "Copying registration cert to root store..."
                     $PublicKey = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2
                     $PublicKey.Import($ExisitngRegistrationCert.RawData)
                     $Store = Get-item Cert:\LocalMachine\Root\
@@ -425,7 +486,6 @@ Configuration PullBoot
                 {
                     Write-Verbose "Client Registration certificate is valid"
                 }
-                
                 Write-Verbose "Checking that current registration cert is in Trusted store"
                 $TrustedRegistrationCert = Get-ChildItem -Path Cert:\LocalMachine\TrustedPeople\ | Where-Object -FilterScript {$_.Subject -eq "CN=$ClientRegCertName"}
                 if ($ExisitngRegistrationCert.Thumbprint -ne $TrustedRegistrationCert.Thumbprint)
@@ -455,7 +515,8 @@ Configuration PullBoot
                 $ExisitngRegistrationCert = Get-ChildItem -Path Cert:\LocalMachine\My\ | Where-Object -FilterScript {$_.Subject -eq "CN=$ClientRegCertName"}
                 if ($ExisitngRegistrationCert -ne $null)
                 {
-                    if ($ExisitngRegistrationCert.verify())
+                    $rootRegistrationCert = Get-ChildItem -Path Cert:\LocalMachine\root\ | Where-Object -FilterScript {$_.Subject -eq "CN=$ClientRegCertName"}
+                    if ($ExisitngRegistrationCert.Thumbprint -eq $rootRegistrationCert.Thumbprint)
                     {
                         $TrustedRegistrationCert = Get-ChildItem -Path Cert:\LocalMachine\TrustedPeople\ | Where-Object -FilterScript {$_.Subject -eq "CN=$ClientRegCertName"}
                         if ($ExisitngRegistrationCert.Thumbprint -eq $TrustedRegistrationCert.Thumbprint)
@@ -499,66 +560,6 @@ Configuration PullBoot
             Ensure = 'Present'
             Name = 'DSC-Service'
             DependsOn = '[WindowsFeature]IIS'
-        }
-        # Copy the self-signed certificate from 'My' to the root store for system to trust it
-        Script InstallRootCertificate 
-        {
-            SetScript = {
-                $PullServerAddress = $using:BootParameters.PullServerAddress
-                if( -not ($PullServerAddress) -or ($PullServerAddress -as [ipaddress]))
-                {
-                    $PullServerAddress = $env:COMPUTERNAME
-                }
-                
-                # Remove any existing certificates that may cause a conflict
-                Get-ChildItem -Path Cert:\LocalMachine\Root\ |
-                Where-Object -FilterScript {$_.Subject -eq "CN=$PullServerAddress"} |
-                Remove-Item
-                
-                # Open the root store and add our self-signed cert to it
-                $store = Get-Item Cert:\LocalMachine\Root
-                $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]'ReadWrite')
-                $CertificateObject = $(New-Object System.Security.Cryptography.X509Certificates.X509Certificate `
-                                        -ArgumentList @(,(Get-ChildItem Cert:\LocalMachine\My | 
-                                                          Where-Object Subject -eq "CN=$PullServerAddress").RawData))
-                $store.Add($CertificateObject)
-                $store.Close()
-            }
-            TestScript = {
-                $PullServerAddress = $using:BootParameters.PullServerAddress
-                if( -not ($PullServerAddress) -or ($PullServerAddress -as [ipaddress]))
-                {
-                    $PullServerAddress = $env:COMPUTERNAME
-                }
-
-                Write-Verbose "Comparing certificatates in System personal store and in 'Root'"
-                $SystemCert = (Get-ChildItem -Path Cert:\LocalMachine\My\ | 
-                               Where-Object -FilterScript {$_.Subject -eq "CN=$PullServerAddress"}).Thumbprint
-                $RootCert = (Get-ChildItem -Path Cert:\LocalMachine\Root\ | 
-                             Where-Object -FilterScript {$_.Subject -eq "CN=$PullServerAddress"}).Thumbprint
-
-                if($RootCert -eq $SystemCert) 
-                {
-                    return $true
-                }
-                else 
-                {
-                    Write-Verbose "Certificates do not match"
-                    return $false
-                }
-            }
-            GetScript = {
-                $PullServerAddress = $using:BootParameters.PullServerAddress
-                if( -not ($PullServerAddress) -or ($PullServerAddress -as [ipaddress]))
-                {
-                    $PullServerAddress = $env:COMPUTERNAME
-                }
-                return @{
-                    'Result' = (Get-ChildItem -Path Cert:\LocalMachine\Root\ | 
-                                Where-Object -FilterScript {$_.Subject -eq "CN=$PullServerAddress"}).Thumbprint
-                }
-            }
-            DependsOn = '[Script]CreateServerCertificate'
         }
         LocalConfigurationManager
         {
