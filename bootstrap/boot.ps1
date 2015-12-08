@@ -54,9 +54,9 @@ Param
     [string]
     $PackageManagerTag = "1.0.4",
 
-    [Parameter(Mandatory=$true)]
+    [Parameter(ParameterSetName="Client",Mandatory=$true)]
     [string]
-    $SharedKey,
+    $RegistrationKey,
 
     [Parameter(ParameterSetName="Client",Mandatory=$true)]
     [string]
@@ -90,6 +90,9 @@ Param
 
     [string]
     $NetworkTestTarget = "github.com",
+
+    [string]
+    $ClientRegCertName = "DSC Client Registration Cert",
 
     [string]
     $PreBootScript
@@ -154,8 +157,7 @@ Configuration PullBoot
 {  
     param 
     (
-        [hashtable] $BootParameters,
-        [string] $ClientRegCertName = "DSC Client Registration Cert"
+        [hashtable] $BootParameters
     )
     node $env:COMPUTERNAME 
     {
@@ -441,6 +443,7 @@ Configuration PullBoot
         Script CreateRegistrationCertificate 
         {
             SetScript = {
+                $ClientRegCertName = $using:BootParameters.ClientRegCertName
                 # Check that we have a registration cert
                 Write-Verbose "Checking for exisitng registration cert"
                 $ExisitngRegistrationCert = Get-ChildItem -Path Cert:\LocalMachine\My\ | Where-Object -FilterScript {$_.Subject -eq "CN=$ClientRegCertName"}
@@ -511,7 +514,7 @@ Configuration PullBoot
                 }
             }
             TestScript = {
-                $ClientRegCertName = $using:ClientRegCertName
+                $ClientRegCertName = $using:BootParameters.ClientRegCertName
                 $ExisitngRegistrationCert = Get-ChildItem -Path Cert:\LocalMachine\My\ | Where-Object -FilterScript {$_.Subject -eq "CN=$ClientRegCertName"}
                 if ($ExisitngRegistrationCert -ne $null)
                 {
@@ -543,7 +546,7 @@ Configuration PullBoot
                 }
             }
             GetScript = {
-                $ClientRegCertName = $using:ClientRegCertName
+                $ClientRegCertName = $using:BootParameters.ClientRegCertName
                 return @{
                     'Result' = (Get-ChildItem -Path Cert:\LocalMachine\My\ | 
                                 Where-Object -FilterScript {$_.Subject -eq "CN=$ClientRegCertName"}).Thumbprint
@@ -1065,8 +1068,8 @@ if ($PullServerConfig)
     
     # Procecss bootstrap parameters and save only settings we need to commit to the main configuration file
     $SettingKeyFilterSet = @(
-                             "SharedKey",
                              "InstallPath",
+                             "ClientRegCertName",
                              "GitRepoName",
                              "GitOrgName",
                              "GitRepoBranch",
