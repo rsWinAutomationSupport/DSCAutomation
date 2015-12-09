@@ -270,12 +270,23 @@ function Get-DSCSettingValue
     return $Result
 }
 
+<#
+.Synopsis
+   Retrieve base64 encoded certificate key to pass to DSC clients for registration
+.DESCRIPTION
+   This cmdlet will access the Pull server's local certificate store, retrieve the registration certificate that is 
+   generated at pull server build time and export this certificate as a Base64 string for use during new DSC client registration process.
+.EXAMPLE
+   Get-DSCClientRegistrationCert
+.EXAMPLE
+   Get-DSCClientRegistrationCert '<Custom Registration Certificate Name>'
+#>
 function Get-DSCClientRegistrationCert
 {
     [CmdletBinding()]
     Param
     (
-        # Name of the regstration certificate
+        # Name of the regstration certificate if different from default
         [string]
         $ClientRegCertName
     )
