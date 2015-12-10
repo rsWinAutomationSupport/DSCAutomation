@@ -14,7 +14,7 @@ function Invoke-DSCPullConfigurationSync
     Param
     (
         [string]
-        $PullServerConfig = (Get-DSCSettingValue = "PullServerConfig").PullServerConfig,
+        $PullServerConfig = (Get-DSCSettingValue "PullServerConfig").PullServerConfig,
         
         [string]
         $InstallPath = (Get-DSCSettingValue "InstallPath").InstallPath,
