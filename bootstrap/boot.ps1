@@ -73,7 +73,7 @@ Param
     $InstallPath = (Join-Path $env:ProgramFiles -ChildPath DSCAutomation),
 
     [string]
-    $NodeInfoPath = (Join-Path $InstallPath -ChildPath nodeinfo.json),
+    $NodeDataPath = (Join-Path $InstallPath -ChildPath nodes.json),
 
     # URL for the Zip file to download the main DSCAutomation module
     [string]
@@ -1040,10 +1040,10 @@ if ($PullServerConfig)
     Write-Verbose "Initiating DSC Pull Server bootstrap..."
     Write-Verbose "##############################################################"
 
+    # Overwrite $PullServerAddress with pull server's hostname if it was provided as an IP (Needed for SSL to work)
     if( -not ($PullServerAddress) -or ($PullServerAddress -as [ipaddress]))
     {
         $PullServerAddress = $env:COMPUTERNAME
-
         # Add the PullServeraddress value to the BootParameters set
         $BootParameters.Add('PullServerAddress',$PullServerAddress)
     }
@@ -1059,7 +1059,7 @@ if ($PullServerConfig)
 
     Write-Verbose "Applying initial Pull Server Boot configuration"
     Start-DscConfiguration -Path $DSCbootMofFolder -Wait -Verbose -Force
-    Write-Verbose "Running DSC config to install extra DSC modules as defined in rsPlatform configuration"
+    Write-Verbose "Running DSC config to install extra DSC modules as defined in rsPlatform"
     Install-PlatformModules
 
     # Create Pull server configuration file
@@ -1075,7 +1075,7 @@ if ($PullServerConfig)
                              "GitRepoBranch",
                              "GitOAuthToken",
                              "PullServerPort",
-                             "NodeInfoPath",
+                             "NodeDataPath",
                              "PullServerConfig",
                              "PullServerAddress"
                             )
@@ -1086,7 +1086,6 @@ if ($PullServerConfig)
             $DSCSettings.Add($_.Name,$_.Value)
         }
     }
-
     # Encrypt the values of each setting using pull server's certificate and save to disk
     Protect-DSCAutomationSettings -CertThumbprint $CertThumbprint -Settings $DSCSettings -Path "$InstallPath\DSCAutomationSettings.xml" -Verbose
 
