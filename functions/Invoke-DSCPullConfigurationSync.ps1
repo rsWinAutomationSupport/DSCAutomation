@@ -14,13 +14,13 @@ function Invoke-DSCPullConfigurationSync
     Param
     (
         [string]
-        $PullServerConfig = (Get-DSCSettingValue = "PullServerConfig"),
+        $PullServerConfig = (Get-DSCSettingValue = "PullServerConfig").PullServerConfig,
         
         [string]
-        $InstallPath = (Get-DSCSettingValue "InstallPath"),
+        $InstallPath = (Get-DSCSettingValue "InstallPath").InstallPath,
         
         [string]
-        $GitRepoName = (Get-DSCSettingValue "GitRepoName")
+        $GitRepoName = (Get-DSCSettingValue "GitRepoName").GitRepoName
     )
     Start-Transcript -Path "$env:SystemRoot\temp\dsc_sync_task_result.txt" -Force
     # Delay Pull server conf regen until ongoing LCM run completes
