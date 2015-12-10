@@ -13,8 +13,6 @@ function Invoke-DSCPullConfigurationSync
     [CmdletBinding()]
     Param
     (
-        # Full path to registered client data file
-        [Parameter(Mandatory=$true)]
         [string]
         $PullServerConfig = (Get-DSCSettingValue = "PullServerConfig"),
         
