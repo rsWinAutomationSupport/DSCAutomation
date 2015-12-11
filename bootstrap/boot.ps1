@@ -221,7 +221,6 @@ Configuration PullBoot
                     'Result' = 'C:\Windows\Temp\Windows6.1-KB2819745-x64-MultiPkg.msu'
                 }
             }
-            DependsOn = @('[File]DevOpsDir')
         }
         Script InstallWMF4 
         {
