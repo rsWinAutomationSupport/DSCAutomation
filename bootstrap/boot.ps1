@@ -40,6 +40,9 @@ Param
     $ClientRegCertName = "DSC Client Registration Cert",
 
     [string]
+    $LogName = "DSCAutomation",
+
+    [string]
     $PreBootScript,
 
     [Parameter(ParameterSetName="PullServer", Mandatory=$true)]
@@ -165,11 +168,29 @@ Configuration PullBoot
     )
     node $env:COMPUTERNAME 
     {
-        File DevOpsDir
+        File CreateInstallDir
         {
             DestinationPath = $BootParameters.InstallPath
             Ensure = 'Present'
             Type = 'Directory'
+        }
+        Script DSCAutomationLog
+        {
+            GetScript = { 
+                $LogName = $using:BootParameters.LogName
+                return @{
+                    "LogName" = $LogName
+                    "Present" = ([bool](Get-EventLog -List | Where-Object -FilterScript {$_.Log -eq $LogName}))
+                }
+            }
+            SetScript = {
+                $LogName = $using:BootParameters.LogName
+                New-Eventlog -source $LogName -logname $LogName
+            }
+            TestScript = {
+                $LogName = $using:BootParameters.LogName
+                return ([bool](Get-EventLog -List | Where-Object -FilterScript {$_.Log -eq $LogName}))
+            }
         }
         Script GetWMF4 
         {
@@ -1081,7 +1102,8 @@ if ($PullServerConfig)
                              "PullServerPort",
                              "NodeDataPath",
                              "PullServerConfig",
-                             "PullServerAddress"
+                             "PullServerAddress",
+                             "LogName"
                             )
     $DSCSettings = @{}
     $BootParameters.GetEnumerator() | foreach {  
