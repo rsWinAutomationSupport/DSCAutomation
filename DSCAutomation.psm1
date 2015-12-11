@@ -302,3 +302,125 @@ function Get-DSCClientRegistrationCert
 
     return $Cert
 }
+
+<#
+.Synopsis
+   Initiate a configuration sync and generate updated 
+.DESCRIPTION
+   Long description
+.EXAMPLE
+   Example of how to use this cmdlet
+.EXAMPLE
+   Another example of how to use this cmdlet
+#>
+function Invoke-DSCPullConfigurationSync
+{
+    [CmdletBinding()]
+    Param
+    (
+        [string]
+        $PullServerConfig = (Get-DSCSettingValue "PullServerConfig").PullServerConfig,
+        
+        [string]
+        $InstallPath = (Get-DSCSettingValue "InstallPath").InstallPath,
+        
+        [string]
+        $GitRepoName = (Get-DSCSettingValue "GitRepoName").GitRepoName,
+
+        [switch]
+        $UseLog = $false,
+
+        [string]
+        $EventLog = (Get-DSCSettingValue "LogName").LogName,
+
+        [string]
+        $LogSourceName = "ConfigurationSync",
+
+        [string]
+        $HashPath = $InstallPath
+    )
+
+    if (($UseLog) -and -not ([System.Diagnostics.EventLog]::SourceExists($LogSourceName)) ) 
+    {
+        [System.Diagnostics.EventLog]::CreateEventSource($LogSourceName, $EventLog)
+    }
+
+    if ($UseLog) 
+    {
+        Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 2001 -EntryType Information -Message "Starting Configuration repo sync task"
+    }
+
+    # Ensure that we are using the most recent $path variable
+    $env:path = [System.Environment]::GetEnvironmentVariable("Path","Machine")
+    
+    # Setup our path variables
+    $ConfDir = Join-Path $InstallPath $GitRepoName
+    $PullConf = Join-Path $ConfDir $PullServerConfig
+    $GitDir = "$ConfDir/.git"
+
+    # Delay Pull server conf regen until ongoing LCM run completes
+    Write-Verbose "Checking LCM State..."
+    $LCMStates = @("Idle","PendingConfiguration")
+    $LCMtate = (Get-DscLocalConfigurationManager).LCMState
+    if ($LCMStates -notcontains $LCMtate)
+    {
+        if ($UseLog)
+        {
+            Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 2002 -EntryType Information -Message "Waiting for LCM to go into idle state"
+        }
+        Do
+        {
+            Write-Verbose "LCM State is $LCMState "
+            Sleep -Seconds 5
+            $LCMtate = (Get-DscLocalConfigurationManager).LCMState
+        } while ($LCMStates -notcontains $LCMtate)
+    }
+    Write-Verbose "Getting latest changes to configuration repository..."
+    & git --git-dir=$GitDir pull
+    
+
+    $CurrentHash = (Get-FileHash $PullConf).hash
+    $HashFilePath = (Join-Path $HashPath $($PullServerConfig,'hash' -join '.'))
+
+    # if  $PullConf checksum does not match
+    if( -not (Test-ConfigFileHash -file $PullConf -hash $HashFilePath) )
+    {
+        Write-Verbose "Executing Pull server DSC configuration..."
+        & $PullConf
+        Set-Content -Path $HashFilePath -Value (Get-FileHash -Path $PullConf).hash
+    }
+    else
+    {
+        Write-Verbose "Skipping pull server DSC script execution as it wasn not modified since previous run"
+        if ($UseLog)
+        {
+            Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 2003 -EntryType Information -Message "Skiping Pull server config as it was not modified"
+        }
+    }
+    if ($UseLog)
+    {
+        Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 2005 -EntryType Information -Message "Configuration synchronisation is complete"
+    }
+}
+
+
+Function Test-ConfigFileHash
+{
+    param (
+        [String] $file,
+        [String] $hash
+    )
+        
+    if ( !(Test-Path $hash) -or !(Test-Path $file))
+    {
+        return $false
+    }        
+    if( (Get-FileHash $file).hash -eq (Get-Content $hash))
+    {
+        return $true
+    }
+    else
+    {
+        return $false
+    }
+}
