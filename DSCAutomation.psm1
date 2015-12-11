@@ -331,7 +331,7 @@ function Invoke-DSCPullConfigurationSync
         $UseLog = $false,
 
         [string]
-        $EventLog = (Get-DSCSettingValue "LogName").LogName,
+        $LogName = (Get-DSCSettingValue "LogName").LogName,
 
         [string]
         $LogSourceName = "ConfigurationSync",
@@ -377,11 +377,9 @@ function Invoke-DSCPullConfigurationSync
     }
     Write-Verbose "Getting latest changes to configuration repository..."
     & git --git-dir=$GitDir pull
-    
 
     $CurrentHash = (Get-FileHash $PullConf).hash
     $HashFilePath = (Join-Path $HashPath $($PullServerConfig,'hash' -join '.'))
-
     # if  $PullConf checksum does not match
     if( -not (Test-ConfigFileHash -file $PullConf -hash $HashFilePath) )
     {
