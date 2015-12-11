@@ -17,7 +17,31 @@
 [CmdletBinding()]
 Param
 (
-    
+    [string]
+    $InstallPath = (Join-Path $env:ProgramFiles -ChildPath DSCAutomation),
+
+    # URL for the Zip file to download the main DSCAutomation module
+    [string]
+    $BootModuleZipURL = "https://github.com/rsWinAutomationSupport/DSCAutomation/archive/aa-updates.zip",
+
+    [string]
+    $BootModuleName = "DSCAutomation",
+
+    [string]
+    $DSCbootMofFolder = (Join-Path "$env:windir\Temp" -ChildPath DSCBootMof),
+
+    [int]
+    $PullServerPort = 8080,
+
+    [string]
+    $NetworkTestTarget = "github.com",
+
+    [string]
+    $ClientRegCertName = "DSC Client Registration Cert",
+
+    [string]
+    $PreBootScript,
+
     [Parameter(ParameterSetName="PullServer", Mandatory=$true)]
     [string]
     $PullServerConfig,
@@ -54,6 +78,10 @@ Param
     [string]
     $PackageManagerTag = "1.0.4",
 
+    [Parameter(ParameterSetName="PullServer", Mandatory=$false)]
+    [string]
+    $NodeDataPath = (Join-Path $InstallPath -ChildPath NodeData.json),
+
     [Parameter(ParameterSetName="Client",Mandatory=$true)]
     [string]
     $RegistrationKey,
@@ -62,40 +90,16 @@ Param
     [string]
     $ClientConfig,
 
+    [Parameter(ParameterSetName="Client",Mandatory=$false)]
+    [string]
+    $NodeInfoPath = (Join-Path $InstallPath -ChildPath NodeSettings.json),
+
     # Client: Valid FQDN Hostname or IP Address of the pull server
     # PullServer: Valid FQDN, not required if using IPs
     [Parameter(ParameterSetName="PullServer", Mandatory=$false)]
     [Parameter(ParameterSetName="Client", Mandatory=$true)]
     [string]
-    $PullServerAddress,
-
-    [string]
-    $InstallPath = (Join-Path $env:ProgramFiles -ChildPath DSCAutomation),
-
-    [string]
-    $NodeDataPath = (Join-Path $InstallPath -ChildPath nodes.json),
-
-    # URL for the Zip file to download the main DSCAutomation module
-    [string]
-    $BootModuleZipURL = "https://github.com/rsWinAutomationSupport/DSCAutomation/archive/staging.zip",
-
-    [string]
-    $BootModuleName = "DSCAutomation",
-
-    [string]
-    $DSCbootMofFolder = (Join-Path "$env:windir\Temp" -ChildPath DSCBootMof),
-
-    [int]
-    $PullServerPort = 8080,
-
-    [string]
-    $NetworkTestTarget = "github.com",
-
-    [string]
-    $ClientRegCertName = "DSC Client Registration Cert",
-
-    [string]
-    $PreBootScript
+    $PullServerAddress
 )
 
 #########################################################################################################
