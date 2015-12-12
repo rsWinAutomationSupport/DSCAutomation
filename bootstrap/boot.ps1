@@ -45,6 +45,10 @@ Param
     [string]
     $PreBootScript,
 
+    # Enable WinRM on the system
+    [switch]
+    $AddWinRMListener = $false,
+
     [Parameter(ParameterSetName="PullServer", Mandatory=$true)]
     [string]
     $PullServerConfig,
@@ -1072,8 +1076,11 @@ if ($PullServerConfig)
         $BootParameters.Add('PullServerAddress',$PullServerAddress)
     }
 
-    Write-Verbose "Configuring WinRM listener"
-    Enable-WinRM
+    # Configuring WinRM listener
+    if ($AddWinRMListener)
+    {
+        Enable-WinRM
+    }
 
     Write-Verbose "Starting Pull Server Boot DSC configuration run"
     PullBoot -BootParameters $BootParameters -OutputPath $DSCbootMofFolder
