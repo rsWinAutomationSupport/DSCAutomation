@@ -257,7 +257,7 @@ function Get-DSCSettingValue
     (
         # Key help description
         [Parameter(Mandatory=$true)]
-        [string]
+        [string[]]
         $Key,
 
         # Path help description
