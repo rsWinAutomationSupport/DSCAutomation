@@ -89,6 +89,10 @@ Param
     [string]
     $NodeDataPath = (Join-Path $InstallPath -ChildPath NodeData.json),
 
+    [Parameter(ParameterSetName="PullServer", Mandatory=$false)]
+    [string]
+    $RegQueueName = "DSCAutomation",
+
     [Parameter(ParameterSetName="Client",Mandatory=$true)]
     [string]
     $RegistrationKey,
@@ -1109,7 +1113,8 @@ if ($PullServerConfig)
                              "NodeDataPath",
                              "PullServerConfig",
                              "PullServerAddress",
-                             "LogName"
+                             "LogName",
+                             "RegQueueName"
                             )
     $DSCSettings = @{}
     $BootParameters.GetEnumerator() | foreach {  
@@ -1142,11 +1147,11 @@ else
     Write-Verbose "##############################################################"
     Write-Verbose "Initiating DSC Client bootstrap..."
     Write-Verbose "##############################################################"
-    <#
     # Will hold Client configuration values to store in $NodeInfoPath
     $NodeInfo = @{}
 
     # Check that all client boot parameters have been provided
+    <#
     $MandatoryClientKeys = @('shared_key','dsc_config')
     ForEach($key in $MandatoryClientKeys)
     {
@@ -1156,12 +1161,17 @@ else
             exit
         }
     }
+    #>
     $NodeInfo.Add('dsc_config',$BootParameters.dsc_config)
     $NodeInfo.Add('shared_key',$BootParameters.shared_key)
 
-    Write-Verbose "Configuring WinRM"
-    Enable-WinRM
+    # Configuring WinRM listener
+    if ($AddWinRMListener)
+    {
+        Enable-WinRM
+    }
 
+    <#
     if($PullServerAddress -as [ipaddress])
     {
         # Legacy compatibility - really needs to go once all platform modules no longer depends on secrets.json
