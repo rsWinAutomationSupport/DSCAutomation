@@ -1065,6 +1065,12 @@ $BootParameters = @{}
         }
     }
 
+# WinRM listener configuration
+if ($AddWinRMListener)
+{
+    Enable-WinRM
+}
+
 # Determine if we're building a Pull server or a client
 if ($PullServerConfig)
 {
@@ -1078,12 +1084,6 @@ if ($PullServerConfig)
         $PullServerAddress = $env:COMPUTERNAME
         # Add the PullServeraddress value to the BootParameters set
         $BootParameters.Add('PullServerAddress',$PullServerAddress)
-    }
-
-    # Configuring WinRM listener
-    if ($AddWinRMListener)
-    {
-        Enable-WinRM
     }
 
     Write-Verbose "Starting Pull Server Boot DSC configuration run"
@@ -1149,36 +1149,14 @@ else
     Write-Verbose "##############################################################"
     # Will hold Client configuration values to store in $NodeInfoPath
     $NodeInfo = @{}
+    $NodeInfo.Add('ClientConfig',$BootParameters.ClientConfig)
 
-    # Check that all client boot parameters have been provided
-    <#
-    $MandatoryClientKeys = @('shared_key','dsc_config')
-    ForEach($key in $MandatoryClientKeys)
-    {
-        if($BootParameters.keys -notcontains $key)
-        { 
-            Write-Verbose "$key key is missing from BootParameters"
-            exit
-        }
-    }
-    #>
-    $NodeInfo.Add('dsc_config',$BootParameters.dsc_config)
-    $NodeInfo.Add('shared_key',$BootParameters.shared_key)
-
-    # Configuring WinRM listener
-    if ($AddWinRMListener)
-    {
-        Enable-WinRM
-    }
-
-    <#
     if($PullServerAddress -as [ipaddress])
     {
         # Legacy compatibility - really needs to go once all platform modules no longer depends on secrets.json
         $PullServerIP = $PullServerAddress
         
         Write-Verbose "Pull Server Address provided seems to be an IP - trying to resovle hostname..."
-        
         # Attempt to resolve Pull server hostname by checking Common Name property
         # from the public certificate of DSC web endpoint
         $PullUrl = ("https://",$PullServerAddress,":",$PullServerPort -join '')
@@ -1207,7 +1185,7 @@ else
     {
         $PullServerName = $PullServerAddress
     }
-
+    <#
     $NodeInfo.Add('PullServerName',$PullServerName)
     $NodeInfo.Add('PullServerIP',$PullServerIP)
     $NodeInfo.Add('PullServerAddress',$PullServerAddress)
