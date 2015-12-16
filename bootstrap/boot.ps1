@@ -93,6 +93,10 @@ Param
     [string]
     $RegQueueName = "DSCAutomation",
 
+    [Parameter(ParameterSetName="PullServer", Mandatory=$false)]
+    [string]
+    $ClientDSCCertName = "$($env:COMPUTERNAME)_dsccert",
+
     [Parameter(ParameterSetName="Client",Mandatory=$true)]
     [string]
     $RegistrationKey,
@@ -102,8 +106,12 @@ Param
     $ClientConfig,
 
     [Parameter(ParameterSetName="Client",Mandatory=$false)]
-    [string]
-    $NodeInfoPath = (Join-Path $InstallPath -ChildPath NodeSettings.json),
+    [int]
+    $ConfigurationModeFrequencyMins = 30,
+
+    [Parameter(ParameterSetName="Client",Mandatory=$false)]
+    [int]
+    $RefreshFrequencyMins = 30,
 
     # Client: Valid FQDN Hostname or IP Address of the pull server
     # PullServer: Valid FQDN, not required if using IPs
@@ -129,7 +137,6 @@ Set-ExecutionPolicy -Scope LocalMachine -ExecutionPolicy RemoteSigned -Force
 
 Write-Verbose "Setting environment variables"
 [Environment]::SetEnvironmentVariable('defaultPath',$InstallPath,'Machine')
-[Environment]::SetEnvironmentVariable('nodeInfoPath',$NodeInfoPath,'Machine')
 
 Write-Verbose " - Install path: $InstallPath"
 Write-Verbose " - NodeInfoPath location: $NodeInfoPath"
@@ -613,20 +620,33 @@ Configuration ClientBoot
 {  
     param 
     (
-        [string] $PullServerAddress,
-        [string] $PullServerName,
-        [int] $PullServerPort,
-        [string] $InstallPath,
-        [string] $NodeInfoPath,
-        [string] $BootModuleName
+        [hashtable] $BootParameters
     )
     node $env:COMPUTERNAME 
     {
         File DevOpsDir
         {
-            DestinationPath = $InstallPath
+            DestinationPath = $BootParameters.InstallPath
             Ensure = 'Present'
             Type = 'Directory'
+        }
+        Script DSCAutomationLog
+        {
+            GetScript = { 
+                $LogName = $using:BootParameters.LogName
+                return @{
+                    "LogName" = $LogName
+                    "Present" = ([bool](Get-EventLog -List | Where-Object -FilterScript {$_.Log -eq $LogName}))
+                }
+            }
+            SetScript = {
+                $LogName = $using:BootParameters.LogName
+                New-Eventlog -source $LogName -logname $LogName
+            }
+            TestScript = {
+                $LogName = $using:BootParameters.LogName
+                return ([bool](Get-EventLog -List | Where-Object -FilterScript {$_.Log -eq $LogName}))
+            }
         }
         Script GetWMF4 
         {
@@ -683,12 +703,12 @@ Configuration ClientBoot
             }
             DependsOn = '[Script]GetWMF4'
         }
-        Script CreateEncryptionCertificate 
+        Script CreateDSCClientCertificate 
         {
             SetScript = {
-                Import-Module -Name $using:BootModuleName
+                Import-Module -Name $using:BootParameters.BootModuleName -Force
                 $EndDate = (Get-Date).AddYears(25) | Get-Date -Format MM/dd/yyyy
-                $CertificateSubject = "CN=$($env:COMPUTERNAME)_enc"
+                $CertificateSubject = "CN=$($using:BootParameters.ClientDSCCertName)"
 
                 Get-ChildItem -Path Cert:\LocalMachine\My\ |
                 Where-Object -FilterScript {$_.Subject -eq $CertificateSubject} | 
@@ -703,7 +723,7 @@ Configuration ClientBoot
                                             -EnhancedKeyUsage 1.3.6.1.5.5.7.3.1,1.3.6.1.5.5.7.3.2
             }
             TestScript = {
-                $CertificateSubject = "CN=$($env:COMPUTERNAME)_enc"
+                $CertificateSubject = "CN=$($using:BootParameters.ClientDSCCertName)"
                 $ClientCert = [bool](Get-ChildItem -Path Cert:\LocalMachine\My\ | Where-Object -FilterScript {$_.Subject -eq $CertificateSubject})
                 if($ClientCert)
                 {
@@ -715,7 +735,7 @@ Configuration ClientBoot
                 }
             }
             GetScript = {
-                $CertificateSubject = "CN=$($env:COMPUTERNAME)_enc"
+                $CertificateSubject = "CN=$($using:BootParameters.ClientDSCCertName)"
                 return @{
                     'Result' = (Get-ChildItem -Path Cert:\LocalMachine\My\ | Where-Object -FilterScript {$_.Subject -eq $CertificateSubject}).Thumbprint
                 }
@@ -725,11 +745,11 @@ Configuration ClientBoot
         Script SetHostFile 
         {
             SetScript = {
-                if($using:PullServerAddress -as [ipaddress])
+                if($($using:BootParameters.PullServerAddress) -as [ipaddress])
                 {
                     $HostFilePath = Join-Path -Path $($env:windir) -ChildPath "system32\drivers\etc\hosts"
-                    $HostFileContents = (Get-Content -Path $HostFilePath).where({$_ -notmatch $($using:PullServerAddress) -AND $_ -notmatch $($using:PullServerName)})
-                    $HostFileContents += "$using:PullServerAddress    $using:PullServerName"
+                    $HostFileContents = (Get-Content -Path $HostFilePath).where({$_ -notmatch $($using:BootParameters.PullServerAddress) -AND $_ -notmatch $($using:BootParameters.PullServerName)})
+                    $HostFileContents += "$($using:BootParameters.PullServerAddress)    $($using:BootParameters.PullServerName)"
                     Set-Content -Value $HostFileContents -Path $HostFilePath -Force -Encoding ASCII
                 }
             }
@@ -737,7 +757,7 @@ Configuration ClientBoot
                 if($using:PullServerAddress -as [ipaddress])
                 {
                     $HostFilePath = Join-Path -Path $($env:windir) -ChildPath "system32\drivers\etc\hosts"
-                    $HostEntryExists = [bool](Get-Content -Path $HostFilePath).where{$_ -match "$using:PullServerAddress    $using:PullServerName"}
+                    $HostEntryExists = [bool](Get-Content -Path $HostFilePath).where{$_ -match "$($using:BootParameters.PullServerAddress)    $($using:BootParameters.PullServerName)"}
                     return $HostEntryExists
                 }
                 else
@@ -747,17 +767,11 @@ Configuration ClientBoot
             }
             GetScript = {
                 $HostFilePath = Join-Path -Path $($env:windir) -ChildPath "system32\drivers\etc\hosts"
-                $HostEntry = (Get-Content -Path $HostFilePath).where{$_ -match "$using:PullServerAddress    $using:PullServerName"}
+                $HostEntry = (Get-Content -Path $HostFilePath).where{$_ -match "$($using:BootParameters.PullServerAddress)    $($using:BootParameters.PullServerName)"}
                 return @{
                     'Result' = $HostEntry
                 }
             }
-        }
-        # MSMQ is required due to us requiring System.Messaging 
-        WindowsFeature MSMQ 
-        {
-            Name = 'MSMQ'
-            Ensure = 'Present'
         }
         # Retrieve the public key of pull server cert and store in root store
         Script GetPullPublicCert 
@@ -869,6 +883,8 @@ Configuration ClientBoot
             }
             DependsOn = @('[Script]SetHostFile')
         }
+        
+        <# This section is to be replaced with Arnie-based registration API request
         # Retreieve all key local client variable and push them to Pull server via MSMQ to register
         Script SendClientPublicCert
         {
@@ -922,19 +938,19 @@ Configuration ClientBoot
             }
             DependsOn = @('[WindowsFeature]MSMQ','[Script]GetPullPublicCert','[Script]CreateEncryptionCertificate','[Script]SetHostFile')
         }
-
+        #>
         LocalConfigurationManager
         {
             AllowModuleOverwrite = 'True'
-            ConfigurationID = "$($nodeinfo.uuid)"
-            CertificateID = (Get-ChildItem Cert:\LocalMachine\My | Where-Object Subject -EQ "CN=$($env:COMPUTERNAME)_enc").Thumbprint
-            ConfigurationModeFrequencyMins = 30
+            ConfigurationID = $BootParameters.ConfigID
+            CertificateID = (Get-ChildItem Cert:\LocalMachine\My | Where-Object Subject -EQ "CN=$($BootParameters.ClientDSCCertName)").Thumbprint
+            ConfigurationModeFrequencyMins = $BootParameters.ConfigurationModeFrequencyMins
             ConfigurationMode = 'ApplyAndAutoCorrect'
             RebootNodeIfNeeded = 'True'
             RefreshMode = 'Pull'
-            RefreshFrequencyMins = 30
+            RefreshFrequencyMins = $BootParameters.RefreshFrequencyMins
             DownloadManagerName = 'WebDownloadManager'
-            DownloadManagerCustomData = (@{ServerUrl = "https://$($PullServerName):$($PullServerPort)/PSDSCPullServer.svc"; AllowUnsecureConnection = "false"})
+            DownloadManagerCustomData = (@{ServerUrl = "https://$($BootParameters.PullServerName):$($BootParameters.PullServerPort)/PSDSCPullServer.svc"; AllowUnsecureConnection = "false"})
         }
     } 
 }
@@ -1068,7 +1084,11 @@ $BootParameters = @{}
 # WinRM listener configuration
 if ($AddWinRMListener)
 {
-    Enable-WinRM
+    if( (Get-ChildItem WSMan:\localhost\Listener | Where-Object Keys -eq "Transport=HTTP").count -eq 0 )
+    {
+        Write-Verbose "Configuring WinRM listener"
+        New-WSManInstance -ResourceURI winrm/config/Listener -SelectorSet @{Address="*";Transport="http"}
+    }
 }
 
 # Determine if we're building a Pull server or a client
@@ -1147,18 +1167,11 @@ else
     Write-Verbose "##############################################################"
     Write-Verbose "Initiating DSC Client bootstrap..."
     Write-Verbose "##############################################################"
-    # Will hold Client configuration values to store in $NodeInfoPath
-    $NodeInfo = @{}
-    $NodeInfo.Add('ClientConfig',$BootParameters.ClientConfig)
 
     if($PullServerAddress -as [ipaddress])
-    {
-        # Legacy compatibility - really needs to go once all platform modules no longer depends on secrets.json
-        $PullServerIP = $PullServerAddress
-        
+    {       
         Write-Verbose "Pull Server Address provided seems to be an IP - trying to resovle hostname..."
-        # Attempt to resolve Pull server hostname by checking Common Name property
-        # from the public certificate of DSC web endpoint
+        # Attempt to resolve Pull server hostname by checking Common Name property of Pull public certificate key
         $PullUrl = ("https://",$PullServerAddress,":",$PullServerPort -join '')
         do 
         {
@@ -1178,34 +1191,51 @@ else
             }
         }
         while(!($PullServerName))
-        Write-Verbose "Resolve Pull server Name: $PullServerName"
+        Write-Verbose "Resolved Pull server Name: $PullServerName"
+
+        # Create Pull server name boot parameter for use in temp DSC config
+        $BootParameters.Item('PullServerName') = $PullServerName
     }
-    # If Pull Server address is a FQDN, then use it for future connections
+
+    # Check if we already have a node configuration ID and generate one if required
+    $ConfigID = (Get-DscLocalConfigurationManager).ConfigurationID
+    if ($ConfigID -eq $null)
+    {
+        Write-Verbose "Generating client configuration ID..."
+        $BootParameters.Add('ConfigID',[Guid]::NewGuid().Guid)
+    }
     else
     {
-        $PullServerName = $PullServerAddress
+        Write-Verbose "Using an existing client configuration ID..."
+        $BootParameters.Add('ConfigID',$ConfigID)
     }
-    <#
-    $NodeInfo.Add('PullServerName',$PullServerName)
-    $NodeInfo.Add('PullServerIP',$PullServerIP)
-    $NodeInfo.Add('PullServerAddress',$PullServerAddress)
-    $NodeInfo.Add('PullServerPort',$PullServerPort)
-    $NodeInfo.Add('uuid',[Guid]::NewGuid().Guid)
-    Set-Content -Path $NodeInfoPath -Value $($NodeInfo | ConvertTo-Json -Depth 2) -Force
-
+   
     Write-Verbose "Executing client DSC boot configuration..."
-    ClientBoot  -PullServerAddress $PullServerAddress `
-                -PullServerName $PullServerName `
-                -PullServerPort $PullServerPort `
-                -NodeInfoPath $NodeInfoPath `
-                -InstallPath $DefaultInstallPath `
-                -OutputPath $DSCbootMofFolder -Verbose
-                
+    ClientBoot  -BootParameters BootParameters -Verbose
 
     Start-DscConfiguration -Force -Path $DSCbootMofFolder -Wait -Verbose
     
     Write-Verbose "Configure Client LCM"
     Set-DscLocalConfigurationManager -Path $DSCbootMofFolder -Verbose
+
+    # Procecss additional bootstrap parameters that are needed for our DSC clients
+    $SettingKeyFilterSet = @(
+                             "InstallPath",
+                             "ClientRegCertName",
+                             "PullServerPort",
+                             "ClientDSCCertName",
+                             "LogName"
+                            )
+    $BootParameters.GetEnumerator() | foreach {  
+        if ($SettingKeyFilterSet -contains $($_.Name))
+        {
+            $DSCSettings.Add($_.Name,$_.Value)
+        }
+    }
+    <#
+    # Encrypt the values of each setting using client's certificate and save to disk
+    $CertThumbprint = (Get-ChildItem Cert:\LocalMachine\My | Where-Object -FilterScript {$_.Subject -eq "CN=$ClientDSCCertName"}).Thumbprint
+    Protect-DSCAutomationSettings -CertThumbprint $CertThumbprint -Settings $DSCSettings -Path "$InstallPath\DSCAutomationSettings.xml" -Verbose
 
     Write-Verbose "Applying final Client DSC Configuration from Pull server - $PullServerName"
     Update-DscConfiguration -Wait -Verbose
