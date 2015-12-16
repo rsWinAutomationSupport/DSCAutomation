@@ -78,19 +78,6 @@ function Get-PullServerInfo
     return $PullServerName
 }
 
-# Executes main Boot configuration of the DSC Bootstraping process
-function Enable-WinRM
-{
-    [CmdletBinding()]
-    param()
-
-    if( (Get-ChildItem WSMan:\localhost\Listener | Where-Object Keys -eq "Transport=HTTP").count -eq 0 )
-    {
-        Write-Verbose "Configuring WinRM listener"
-        New-WSManInstance -ResourceURI winrm/config/Listener -SelectorSet @{Address="*";Transport="http"}
-    }
-}
-
 <#
 .Synopsis
    Encrypt DSC Automation settings.
