@@ -1229,8 +1229,11 @@ else
     $SettingKeyFilterSet = @(
                              "InstallPath",
                              "ClientRegCertName",
+                             "PullServerName",
                              "PullServerPort",
                              "ClientDSCCertName",
+                             "ConfigID",
+                             "ClientConfig",
                              "LogName"
                             )
     $DSCSettings = @{}
