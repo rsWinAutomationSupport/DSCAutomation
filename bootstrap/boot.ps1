@@ -724,7 +724,8 @@ Configuration ClientBoot
             }
             TestScript = {
                 $CertificateSubject = "CN=$($using:BootParameters.ClientDSCCertName)"
-                $ClientCert = [bool](Get-ChildItem -Path Cert:\LocalMachine\My\ | Where-Object -FilterScript {$_.Subject -eq $CertificateSubject})
+                $ClientCert = [bool](Get-ChildItem -Path Cert:\LocalMachine\My\ | 
+                                        Where-Object -FilterScript {$_.Subject -eq $CertificateSubject})
                 if($ClientCert)
                 {
                     return $true
@@ -736,8 +737,10 @@ Configuration ClientBoot
             }
             GetScript = {
                 $CertificateSubject = "CN=$($using:BootParameters.ClientDSCCertName)"
+                $Result = (Get-ChildItem -Path Cert:\LocalMachine\My\ | 
+                                Where-Object -FilterScript {$_.Subject -eq $CertificateSubject}).Thumbprint
                 return @{
-                    'Result' = (Get-ChildItem -Path Cert:\LocalMachine\My\ | Where-Object -FilterScript {$_.Subject -eq $CertificateSubject}).Thumbprint
+                    'Result' = $Result
                 }
             }
         }
@@ -747,17 +750,18 @@ Configuration ClientBoot
             SetScript = {
                 if($($using:BootParameters.PullServerAddress) -as [ipaddress])
                 {
-                    $HostFilePath = Join-Path -Path $($env:windir) -ChildPath "system32\drivers\etc\hosts"
-                    $HostFileContents = (Get-Content -Path $HostFilePath).where({$_ -notmatch $($using:BootParameters.PullServerAddress) -AND $_ -notmatch $($using:BootParameters.PullServerName)})
+                    $HostFilePath = "$($env:windir)\system32\drivers\etc\hosts"
+                    $HostsFile = (Get-Content -Path $HostFilePath)
+                    $HostFileContents = $HostsFile.where({$_ -notmatch $($using:BootParameters.PullServerAddress) -AND $_ -notmatch $($using:BootParameters.PullServerName)})
                     $HostFileContents += "$($using:BootParameters.PullServerAddress)    $($using:BootParameters.PullServerName)"
                     Set-Content -Value $HostFileContents -Path $HostFilePath -Force -Encoding ASCII
                 }
             }
             TestScript = {
-                if($using:PullServerAddress -as [ipaddress])
+                if($($using:BootParameters.PullServerAddress) -as [ipaddress])
                 {
-                    $HostFilePath = Join-Path -Path $($env:windir) -ChildPath "system32\drivers\etc\hosts"
-                    $HostEntryExists = [bool](Get-Content -Path $HostFilePath).where{$_ -match "$($using:BootParameters.PullServerAddress)    $($using:BootParameters.PullServerName)"}
+                    $HostsFile = (Get-Content -Path "$($env:windir)\system32\drivers\etc\hosts")
+                    $HostEntryExists = [bool]$HostsFile.where{$_ -match "$($using:BootParameters.PullServerAddress)    $($using:BootParameters.PullServerName)"}
                     return $HostEntryExists
                 }
                 else
@@ -766,8 +770,8 @@ Configuration ClientBoot
                 }
             }
             GetScript = {
-                $HostFilePath = Join-Path -Path $($env:windir) -ChildPath "system32\drivers\etc\hosts"
-                $HostEntry = (Get-Content -Path $HostFilePath).where{$_ -match "$($using:BootParameters.PullServerAddress)    $($using:BootParameters.PullServerName)"}
+                $HostsFile = (Get-Content -Path "$($env:windir)\system32\drivers\etc\hosts")
+                $HostEntry = $HostsFile.where{$_ -match "$($using:BootParameters.PullServerAddress)    $($using:BootParameters.PullServerName)"}
                 return @{
                     'Result' = $HostEntry
                 }
@@ -777,7 +781,7 @@ Configuration ClientBoot
         Script GetPullPublicCert 
         {
             SetScript = {
-                $Uri = "https://$($using:PullServerAddress):$($using:PullServerPort)"
+                $Uri = "https://$($using:BootParameters.PullServerAddress):$($using:BootParameters.PullServerPort)"
                 Write-Verbose "Trying to connect to $Uri"
                 do 
                 {
@@ -824,7 +828,7 @@ Configuration ClientBoot
                 $store.Close()
             }
             TestScript = {
-                $Uri = "https://$($using:PullServerAddress):$($using:PullServerPort)"
+                $Uri = "https://$($using:BootParameters.PullServerAddress):$($using:BootParameters.PullServerPort)"
                 Write-Verbose "Contacting $Uri"
                 do 
                 {
@@ -850,7 +854,7 @@ Configuration ClientBoot
                 $webRequest = [Net.WebRequest]::Create($Uri)
                 try 
                 {
-                $webRequest.GetResponse() 
+                    $webRequest.GetResponse() 
                 }
                 catch
                 {
@@ -867,7 +871,7 @@ Configuration ClientBoot
                 }
             }
             GetScript = {
-                $Uri = "https://$($using:PullServerAddress):$($using:PullServerPort)"
+                $Uri = "https://$($using:BootParameters.PullServerAddress):$($using:BootParameters.PullServerPort)"
                 $webRequest = [Net.WebRequest]::Create($uri)
                 try 
                 {
@@ -1168,6 +1172,7 @@ else
     Write-Verbose "Initiating DSC Client bootstrap..."
     Write-Verbose "##############################################################"
 
+    # Create Pull server name boot parameter for use in temp DSC config Hosts file management is address is an IP
     if($PullServerAddress -as [ipaddress])
     {       
         Write-Verbose "Pull Server Address provided seems to be an IP - trying to resovle hostname..."
@@ -1193,8 +1198,11 @@ else
         while(!($PullServerName))
         Write-Verbose "Resolved Pull server Name: $PullServerName"
 
-        # Create Pull server name boot parameter for use in temp DSC config
         $BootParameters.Item('PullServerName') = $PullServerName
+    }
+    else
+    {
+        $BootParameters.Item('PullServerName') = $PullServerAddress
     }
 
     # Check if we already have a node configuration ID and generate one if required
@@ -1211,12 +1219,11 @@ else
     }
    
     Write-Verbose "Executing client DSC boot configuration..."
-    ClientBoot  -BootParameters BootParameters -Verbose
-
+    ClientBoot  -BootParameters $BootParameters  -OutputPath $DSCbootMofFolder -Verbose
     Start-DscConfiguration -Force -Path $DSCbootMofFolder -Wait -Verbose
     
     Write-Verbose "Configure Client LCM"
-    Set-DscLocalConfigurationManager -Path $DSCbootMofFolder -Verbose
+    # Set-DscLocalConfigurationManager -Path $DSCbootMofFolder -Verbose
 
     # Procecss additional bootstrap parameters that are needed for our DSC clients
     $SettingKeyFilterSet = @(
@@ -1226,17 +1233,19 @@ else
                              "ClientDSCCertName",
                              "LogName"
                             )
+    $DSCSettings = @{}
     $BootParameters.GetEnumerator() | foreach {  
-        if ($SettingKeyFilterSet -contains $($_.Name))
+    if ($SettingKeyFilterSet -contains $($_.Name))
         {
             $DSCSettings.Add($_.Name,$_.Value)
         }
     }
-    <#
+    
     # Encrypt the values of each setting using client's certificate and save to disk
     $CertThumbprint = (Get-ChildItem Cert:\LocalMachine\My | Where-Object -FilterScript {$_.Subject -eq "CN=$ClientDSCCertName"}).Thumbprint
     Protect-DSCAutomationSettings -CertThumbprint $CertThumbprint -Settings $DSCSettings -Path "$InstallPath\DSCAutomationSettings.xml" -Verbose
-
+    
+    <#    
     Write-Verbose "Applying final Client DSC Configuration from Pull server - $PullServerName"
     Update-DscConfiguration -Wait -Verbose
     #>
