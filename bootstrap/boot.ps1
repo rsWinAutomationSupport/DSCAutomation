@@ -1056,7 +1056,7 @@ if (-not (Test-Connection $NetworkTestTarget -Quiet))
 {
     do
     {
-        Write-Host "Waiting for network connectivity to '$NetworkTestTarget' to be established..."
+        Write-Verbose "Waiting for network connectivity to '$NetworkTestTarget' to be established..."
         Sleep -Seconds 20
     }
     until (-not (Test-Connection $NetworkTestTarget -Quiet))
@@ -1211,7 +1211,7 @@ else
     {
         do
         {
-            Write-Host "Connection failed - waiting for network connectivity to '$PullServerAddress' to be established..."
+            Write-Verbose "Connection failed - waiting for network connectivity to '$PullServerAddress' to be established..."
             Sleep -Seconds 20
         }
         until (-not (Test-NetConnection -ComputerName $PullServerAddress -Port $PullServerPort -InformationLevel 'Detailed'))
