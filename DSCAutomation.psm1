@@ -231,25 +231,33 @@ function Unprotect-DSCAutomationSettings
 .DESCRIPTION
    Use Unprotect-DSCAutomationSettings to decrypt the databag and retrieve the plain-text value for the specified setting.
 .EXAMPLE
-   Get-DSCSettingValue 'NodeInfoPath'
+   Get-DSCSettingValue 'LogName'
 .EXAMPLE
    Get-DSCSettingValue -Key 'PullServerAddress' -Path 'C:\folder\file.xml'
 .EXAMPLE
-   Get-DSCSettingValue -Key 'NodeInfoPath', 'GitRepoName'
+   Get-DSCSettingValue -Key 'LogName', 'GitRepoName'
+.EXAMPLE
+   Get-DSCSettingValue -ListAvailable
 #>
 function Get-DSCSettingValue
 {
-    [CmdletBinding()]
+    [CmdletBinding(DefaultParameterSetName='GetValues')]
     Param
     (
         # Key help description
-        [Parameter(Mandatory=$true)]
+        [Parameter(ParameterSetName='GetValues', Mandatory=$true, Position=0)]
         [string[]]
         $Key,
 
         # Path help description
+        [Parameter(Mandatory=$false)]
         [string]
-        $Path
+        $Path,
+
+        # List all available settings
+        [Parameter(ParameterSetName='ListKeys', Mandatory=$true, Position=0)]
+        [switch]
+        $ListAvailable = $false
     )
     # Decrypt contents ofthe DSCAutomation configuration file
     if ($PSBoundParameters.ContainsKey('Path'))
@@ -260,18 +268,31 @@ function Get-DSCSettingValue
     {
         $DSCSettings = Unprotect-DSCAutomationSettings
     }
-    # Retrieve the plain-text value for each setting that is part of $Key parameter
-    $Result = @{}
-    foreach ($Item in $Key)
+
+    if ($ListAvailable.IsPresent)
     {
-        if ($DSCSettings[$Item] -ne $null)
+        # Retrieve a list of all parameter names stored in configuration file
+        $Result = @()
+        foreach ($Item in $DSCSettings.Keys)
         {
-            $Value = $DSCSettings[$Item].GetNetworkCredential().Password
-            $Result[$Item] = $Value
+            $Result += $Item
         }
-        else
+    }
+    else
+    {
+        # Retrieve the plain-text value for each setting that is part of $Key parameter
+        $Result = @{}
+        foreach ($Item in $Key)
         {
-            $Result[$Item] = $null
+            if ($DSCSettings[$Item] -ne $null)
+            {
+                $Value = $DSCSettings[$Item].GetNetworkCredential().Password
+                $Result[$Item] = $Value
+            }
+            else
+            {
+                $Result[$Item] = $null
+            }
         }
     }
     return $Result
