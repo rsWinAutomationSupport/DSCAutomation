@@ -95,7 +95,7 @@ Param
 
     [Parameter(ParameterSetName="Client", Mandatory=$false)]
     [string]
-    $ClientDSCCertName = "$($env:COMPUTERNAME)_DSCCert",
+    $ClientDSCCertName = "$($env:COMPUTERNAME)_DSCClientCert",
 
     [Parameter(ParameterSetName="Client",Mandatory=$true)]
     [string]
