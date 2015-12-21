@@ -367,18 +367,15 @@ function Invoke-DSCPullConfigurationSync
         [string]
         $LogName = (Get-DSCSettingValue "LogName").LogName,
 
-        # Name of the log source to use for creating log entries
-        [string]
-        $LogSourceName = "Config Sync",
-
         # Path to folder where t ostore the checksum file
         [string]
         $HashPath = $InstallPath
     )
 
+    $LogSourceName = $MyInvocation.MyCommand.Name
     if (($UseLog) -and -not ([System.Diagnostics.EventLog]::SourceExists($LogSourceName)) ) 
     {
-        [System.Diagnostics.EventLog]::CreateEventSource($LogSourceName, $EventLog)
+        [System.Diagnostics.EventLog]::CreateEventSource($LogSourceName, $LogName)
     }
 
     if ($UseLog) 
