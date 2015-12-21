@@ -393,7 +393,7 @@ function Invoke-DSCPullConfigurationSync
     # Setup our path variables
     $ConfDir = Join-Path $InstallPath $GitRepoName
     $PullConf = Join-Path $ConfDir $PullServerConfig
-    $GitDir = "$ConfDir/.git"
+    $GitDir = "$ConfDir\.git"
 
     # Delay Pull server conf regen until ongoing LCM run completes
     Write-Verbose "Checking LCM State..."
