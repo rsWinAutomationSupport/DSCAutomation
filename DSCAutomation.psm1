@@ -369,7 +369,11 @@ function Invoke-DSCPullConfigurationSync
 
         # Path to folder where t ostore the checksum file
         [string]
-        $HashPath = $InstallPath
+        $HashPath = $InstallPath,
+
+        # Force pull server configuration generation
+        [switch]
+        $Force = $false
     )
 
     $LogSourceName = $MyInvocation.MyCommand.Name
@@ -414,7 +418,7 @@ function Invoke-DSCPullConfigurationSync
     $CurrentHash = (Get-FileHash $PullConf).hash
     $HashFilePath = (Join-Path $HashPath $($PullServerConfig,'hash' -join '.'))
     # if  $PullConf checksum does not match
-    if( -not (Test-ConfigFileHash -file $PullConf -hash $HashFilePath) )
+    if( -not (Test-ConfigFileHash -file $PullConf -hash $HashFilePath) -or ($Force))
     {
         Write-Verbose "Executing Pull server DSC configuration..."
         & $PullConf
