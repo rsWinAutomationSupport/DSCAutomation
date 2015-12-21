@@ -429,7 +429,7 @@ function Invoke-DSCPullConfigurationSync
         Write-Verbose "Skipping pull server DSC script execution as it wasn not modified since previous run"
         if ($UseLog)
         {
-            Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 2003 -EntryType Information -Message "Skiping Pull server config as it was not modified"
+            Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 2003 -EntryType Information -Message "Skipping Pull server config as it was not modified"
         }
     }
     if ($UseLog)
