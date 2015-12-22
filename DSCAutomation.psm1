@@ -78,15 +78,14 @@ function Get-PullServerInfo
     return $PullServerName
 }
 
-# Executes main Boot configuration of the DSC Bootstraping process
-function Enable-WinRM
-{
-    if( (Get-ChildItem WSMan:\localhost\Listener | Where-Object Keys -eq "Transport=HTTP").count -eq 0 )
-    {
-        New-WSManInstance -ResourceURI winrm/config/Listener -SelectorSet @{Address="*";Transport="http"}
-    }
-}
-
+<#
+.Synopsis
+   Encrypt DSC Automation settings.
+.DESCRIPTION
+   This function will encrypt the values within a hashtable object (-Settings) using an existing certificate and save the output on the file system.
+.EXAMPLE
+   Protect-DSCAutomationSettings -CertThumbprint <cert-thumbprint> -Settings <settings hashtable> -Path <output destination> -Verbose
+#>
 function Protect-DSCAutomationSettings 
 {
     [CmdletBinding()]
@@ -158,12 +157,23 @@ function Protect-DSCAutomationSettings
     Export-Clixml -InputObject $DSCAutomationSettings -Path $Path -Force
 }
 
+<#
+.Synopsis
+   Decrypt the encrypted DSCAutomation settings file values.
+.DESCRIPTION
+   This function will access the encrypted DSC Automation settings file, then use pull server's certificate to decrypt the AES key 
+   for each setting value in order to generate and return a set of PSCredential objects.
+.EXAMPLE
+   Unprotect-DSCAutomationSettings
+.EXAMPLE
+   Unprotect-DSCAutomationSettings -Path 'C:\folder\file.xml'
+#>
 function Unprotect-DSCAutomationSettings
 {
     [CmdletBinding()]
     param
     (
-        # Source path for the secure settings file
+        # Source path for the secure settings file to override the default location
         [string]
         $Path = (Join-Path ([System.Environment]::GetEnvironmentVariable("defaultPath","Machine")) "DSCAutomationSettings.xml")
     )
@@ -219,30 +229,35 @@ function Unprotect-DSCAutomationSettings
 .Synopsis
    Retrieve the decrypted string from an encrypted databag.
 .DESCRIPTION
-   Uses Unprotect-DSCAutomationSettings to decrypt the databag and retrieve the plain-text value for the specified setting.
+   Use Unprotect-DSCAutomationSettings to decrypt the databag and retrieve the plain-text value for the specified setting.
 .EXAMPLE
-   Get-DSCSettingValue 'NodeInfoPath'
+   Get-DSCSettingValue 'LogName'
 .EXAMPLE
    Get-DSCSettingValue -Key 'PullServerAddress' -Path 'C:\folder\file.xml'
 .EXAMPLE
-   Get-DSCSettingValue -Key 'NodeInfoPath', 'GitRepoName'
+   Get-DSCSettingValue -Key 'LogName', 'GitRepoName'
+.EXAMPLE
+   Get-DSCSettingValue -ListAvailable
 #>
 function Get-DSCSettingValue
 {
-    [CmdletBinding()]
+    [CmdletBinding(DefaultParameterSetName='GetValues')]
     Param
     (
         # Key help description
-        [Parameter(Mandatory=$true,
-                   ValueFromPipelineByPropertyName=$true,
-                   Position=0)]
+        [Parameter(ParameterSetName='GetValues', Mandatory=$true, Position=0)]
+        [string[]]
         $Key,
+
         # Path help description
-        [Parameter(Mandatory=$false,
-                   ValueFromPipelineByPropertyName=$true,
-                   Position=1)]
+        [Parameter(Mandatory=$false)]
         [string]
-        $Path
+        $Path,
+
+        # List all available settings
+        [Parameter(ParameterSetName='ListKeys', Mandatory=$true, Position=0)]
+        [switch]
+        $ListAvailable = $false
     )
     # Decrypt contents ofthe DSCAutomation configuration file
     if ($PSBoundParameters.ContainsKey('Path'))
@@ -253,18 +268,31 @@ function Get-DSCSettingValue
     {
         $DSCSettings = Unprotect-DSCAutomationSettings
     }
-    # Retrieve the plain-text value for each setting that is part of $Key parameter
-    $Result = @{}
-    foreach ($Item in $Key)
+
+    if ($ListAvailable.IsPresent)
     {
-        if ($DSCSettings[$Item] -ne $null)
+        # Retrieve a list of all parameter names stored in configuration file
+        $Result = @()
+        foreach ($Item in $DSCSettings.Keys)
         {
-            $Value = $DSCSettings[$Item].GetNetworkCredential().Password
-            $Result[$Item] = $Value
+            $Result += $Item
         }
-        else
+    }
+    else
+    {
+        # Retrieve the plain-text value for each setting that is part of $Key parameter
+        $Result = @{}
+        foreach ($Item in $Key)
         {
-            $Result[$Item] = $null
+            if ($DSCSettings[$Item] -ne $null)
+            {
+                $Value = $DSCSettings[$Item].GetNetworkCredential().Password
+                $Result[$Item] = $Value
+            }
+            else
+            {
+                $Result[$Item] = $null
+            }
         }
     }
     return $Result
@@ -301,4 +329,146 @@ function Get-DSCClientRegistrationCert
     $Cert = [System.Convert]::ToBase64String((Get-Item Cert:\LocalMachine\My\$RegCertThumbprint).Export('PFX', ''))
 
     return $Cert
+}
+
+<#
+.Synopsis
+   Initiate Pull server configuration sync
+.DESCRIPTION
+   Initiate a configuration sync and generate updated MOF file for Pull server. By default, it will access DSCAutomation Settings that were generated during bootstrap.
+   Many parameters can be overriden if required.
+.EXAMPLE
+   Invoke-DSCPullConfigurationSync
+.EXAMPLE
+   Invoke-DSCPullConfigurationSync -UseLog
+#>
+function Invoke-DSCPullConfigurationSync
+{
+    [CmdletBinding()]
+    Param
+    (
+        # Name of the DSC configuration file (normally Pull server config)
+        [string]
+        $PullServerConfig = (Get-DSCSettingValue "PullServerConfig").PullServerConfig,
+        
+        # DSC Automation install directory
+        [string]
+        $InstallPath = (Get-DSCSettingValue "InstallPath").InstallPath,
+        
+        # Name of the configuration git repository
+        [string]
+        $GitRepoName = (Get-DSCSettingValue "GitRepoName").GitRepoName,
+
+        # Enable extra logging to the event log
+        [switch]
+        $UseLog = $false,
+
+        # Name of the event log to use for logging
+        [string]
+        $LogName = (Get-DSCSettingValue "LogName").LogName,
+
+        # Path to folder where t ostore the checksum file
+        [string]
+        $HashPath = $InstallPath,
+
+        # Force pull server configuration generation
+        [switch]
+        $Force = $false
+    )
+
+    $LogSourceName = $MyInvocation.MyCommand.Name
+    if (($UseLog) -and -not ([System.Diagnostics.EventLog]::SourceExists($LogSourceName)) ) 
+    {
+        [System.Diagnostics.EventLog]::CreateEventSource($LogSourceName, $LogName)
+    }
+
+    if ($UseLog) 
+    {
+        Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 2001 -EntryType Information -Message "Starting Configuration repo sync task"
+    }
+
+    # Ensure that we are using the most recent $path variable
+    $env:path = [System.Environment]::GetEnvironmentVariable("Path","Machine")
+    
+    # Setup our path variables
+    $ConfDir = Join-Path $InstallPath $GitRepoName
+    $PullConf = Join-Path $ConfDir $PullServerConfig
+    $GitDir = "$ConfDir\.git"
+
+    # Delay Pull server conf regen until ongoing LCM run completes
+    Write-Verbose "Checking LCM State..."
+    $LCMStates = @("Idle","PendingConfiguration")
+    $LCMtate = (Get-DscLocalConfigurationManager).LCMState
+    if ($LCMStates -notcontains $LCMtate)
+    {
+        if ($UseLog)
+        {
+            Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 2002 -EntryType Information -Message "Waiting for LCM to go into idle state"
+        }
+        Do
+        {
+            Write-Verbose "LCM State is $LCMState "
+            Sleep -Seconds 5
+            $LCMtate = (Get-DscLocalConfigurationManager).LCMState
+        } while ($LCMStates -notcontains $LCMtate)
+    }
+    Write-Verbose "Getting latest changes to configuration repository..."
+    & git --git-dir=$GitDir pull
+
+    $CurrentHash = (Get-FileHash $PullConf).hash
+    $HashFilePath = (Join-Path $HashPath $($PullServerConfig,'hash' -join '.'))
+    # if  $PullConf checksum does not match
+    if( -not (Test-ConfigFileHash -file $PullConf -hash $HashFilePath) -or ($Force))
+    {
+        Write-Verbose "Executing Pull server DSC configuration..."
+        & $PullConf
+        Set-Content -Path $HashFilePath -Value (Get-FileHash -Path $PullConf).hash
+    }
+    else
+    {
+        Write-Verbose "Skipping pull server DSC script execution as it wasn not modified since previous run"
+        if ($UseLog)
+        {
+            Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 2003 -EntryType Information -Message "Skipping Pull server config as it was not modified"
+        }
+    }
+    if ($UseLog)
+    {
+        Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 2005 -EntryType Information -Message "Configuration synchronisation is complete"
+    }
+}
+
+<#
+.Synopsis
+   Compare file hash to one stored in a file 
+.DESCRIPTION
+   Function that compares a file hash to one that was created previously - returns a bool value. Used for detecting changes to DSC configuration files.
+   Generating has files: Set-Content -Path <hashfilepath> -Value (Get-FileHash -Path <sourcefile>).hash
+.EXAMPLE
+   Test-ConfigFileHash -file <targetfile> -hash <hashfile>
+#>
+Function Test-ConfigFileHash
+{
+    param (
+        # Full path to the target file
+        [String]
+        $file,
+        
+        # Full path to the file that contains the checksum for comparison
+        [String]
+        $hash
+    )
+        
+    if ( !(Test-Path $hash) -or !(Test-Path $file))
+    {
+        return $false
+    }        
+    if( (Get-FileHash $file).hash -eq (Get-Content $hash))
+    {
+        return $true
+    }
+    else
+    {
+        return $false
+    }
 }
