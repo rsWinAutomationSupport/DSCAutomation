@@ -29,16 +29,14 @@ function Invoke-DSCClientRegistration
         $ClientConfigHashPath,
         
         [string]
-        $QueueName = "dscregistration",
+        $QueueName = "dscAutomation"
 
-        [Parameter(Mandatory=$true)]
-        [string]
-        $CertificatesFolderPath
     )
 
     [Reflection.Assembly]::LoadWithPartialName("System.Messaging") | Out-Null
     $queue = New-Object System.Messaging.MessageQueue ".\private$\$QueueName"
     $queue.Formatter.TargetTypeNames = ,"System.String"
+    $installPath = Get-DSCSettingValue InstallPath
     do
     {
         $msg = $null
@@ -93,6 +91,7 @@ function Invoke-DSCClientRegistration
                     $store.Close()
                 }
                 
+                $CertificatesFolderPath = Join-Path -Path $installPath -ChildPath "Certificates"
                 $destinationFile = "$CertificatesFolderPath\$($body.uuid).cer"
                 if ( (Test-Path $destinationFile) )
                 {
