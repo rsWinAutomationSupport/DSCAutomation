@@ -407,6 +407,7 @@ function Invoke-DSCPullConfigurationSync
         }
         Do
         {
+            $LCMtate = (Get-DscLocalConfigurationManager).LCMState
             Write-Verbose "LCM State is $LCMState "
             Sleep -Seconds 5
             $LCMtate = (Get-DscLocalConfigurationManager).LCMState
@@ -426,7 +427,7 @@ function Invoke-DSCPullConfigurationSync
     }
     else
     {
-        Write-Verbose "Skipping pull server DSC script execution as it wasn not modified since previous run"
+        Write-Verbose "Skipping pull server DSC script execution as it was not modified since previous run"
         if ($UseLog)
         {
             Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 2003 -EntryType Information -Message "Skipping Pull server config as it was not modified"
@@ -470,5 +471,88 @@ Function Test-ConfigFileHash
     else
     {
         return $false
+    }
+}
+
+<#
+.Synopsis
+   Short description
+.DESCRIPTION
+   Long description
+.EXAMPLE
+   Example of how to use this cmdlet
+.EXAMPLE
+   Another example of how to use this cmdlet
+#>
+function Submit-DSCClientRegistration
+{
+    [CmdletBinding()]
+    Param
+    (
+        # ConfigID help description
+        [Parameter(Mandatory=$false)]
+        $ConfigID = (Get-DSCSettingValue -Key "ConfigID").ConfigID,
+
+        # ClientConfig help description
+        [Parameter(Mandatory=$false)]
+        $ClientConfig = (Get-DSCSettingValue -Key "ClientConfig").ClientConfig,
+
+        # ClientRegCertName help description
+        [Parameter(Mandatory=$false)]
+        $ClientRegCertName = (Get-DSCSettingValue -Key "ClientRegCertName").ClientRegCertName,
+
+        # ClientDSCCertName help description
+        [Parameter(Mandatory=$false)]
+        $ClientDSCCertName = (Get-DSCSettingValue -Key "ClientDSCCertName").ClientDSCCertName,
+
+        # PullServerName help description
+        [Parameter(Mandatory=$false)]
+        $PullServerName = (Get-DSCSettingValue -Key "PullServerName").PullServerName,
+
+        # PullServerPort help description
+        [Parameter(Mandatory=$false)]
+        $Port = 443,
+
+        # Default timeout value to use when sending requests (default: 
+        [Parameter(Mandatory=$false)]
+        $TimeoutSec = 10
+    )
+
+    # Client Regitration code
+    $Settings = Get-DSCSettingValue -Key "ConfigID","ClientConfig","ClientRegCertName","ClientDSCCertName","PullServerName","PullServerPort"
+    $ClientDSCCert = (Get-ChildItem Cert:\LocalMachine\My | Where-Object { $_.Subject -eq "CN=$ClientDSCCertName" }).RawData
+    $Property = @{
+                "ConfigID" = $ConfigID
+                "ClientName" = $env:COMPUTERNAME
+                "ClientDSCCert" = ([System.Convert]::ToBase64String($ClientDSCCert))
+                "ClientConfig" = $ClientConfig
+                }
+    $AuthCert = (Get-ChildItem Cert:\LocalMachine\My | Where-Object { $_.Subject -eq "CN=$ClientRegCertName" })
+    $RegistrationUri = "https://$($PullServerName):$($Port)/Arnie.svc/secure/ItsShowtime"
+    $Body = New-Object -TypeName psobject -Property $Property | ConvertTo-Json
+    try 
+    {
+        Write-Verbose "Trying to send client registration data to Pull server..."
+        $ClientRegResult = Invoke-RestMethod -Method Post -Uri $RegistrationUri -TimeoutSec $TimeoutSec -Certificate $AuthCert -Body $Body -ContentType "application/json"  | ConvertFrom-Json
+        if ($ClientRegResult.ConfigID -eq $ConfigID)
+        {
+            Write-Verbose "Client registration data submitted to Pull server successfully"
+            return "Success"
+        }
+        else
+        {
+            Throw "Failed to submit client registration data - ensure that Pull server is configured correctly."
+        }
+    }
+    catch [System.Management.Automation.RuntimeException]
+    {
+        Write-Verbose "Error submitting client registration: $($_.Exception.message)"
+        Write-Verbose "Target pull server URI: $RegistrationUri"
+    }
+    catch 
+    {
+        Write-Verbose "Client registration request failed with: $($_.Exception.message)"
+        Write-Verbose "Please verify connectivity to and check functionality of the pull server"
+        Write-Verbose "Target pull server URI: $RegistrationUri"
     }
 }
