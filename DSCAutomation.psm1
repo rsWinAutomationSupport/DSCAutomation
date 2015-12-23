@@ -518,8 +518,6 @@ function Submit-DSCClientRegistration
         $TimeoutSec = 10
     )
 
-    # Client Regitration code
-    $Settings = Get-DSCSettingValue -Key "ConfigID","ClientConfig","ClientRegCertName","ClientDSCCertName","PullServerName","PullServerPort"
     $ClientDSCCert = (Get-ChildItem Cert:\LocalMachine\My | Where-Object { $_.Subject -eq "CN=$ClientDSCCertName" }).RawData
     $Property = @{
                 "ConfigID" = $ConfigID

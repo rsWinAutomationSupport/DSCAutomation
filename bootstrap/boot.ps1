@@ -923,62 +923,6 @@ Configuration ClientBoot
                 }
             }
         }
-
-        <# This section is to be replaced with Arnie-based registration API request
-        # Retreieve all key local client variable and push them to Pull server via MSMQ to register
-        Script SendClientPublicCert
-        {
-            SetScript = {
-                $nodeinfo = Get-Content $using:NodeInfoPath -Raw | ConvertFrom-Json
-                $ClientPublicCert = ((Get-ChildItem Cert:\LocalMachine\My | Where-Object Subject -eq "CN=$env:COMPUTERNAME`_enc").RawData)
-                $MessageBody = @{'Name' = "$env:COMPUTERNAME"
-                                'uuid' = $($nodeinfo.uuid)
-                                'dsc_config' = $($nodeinfo.dsc_config)
-                                'shared_key' = $($nodeinfo.shared_key)
-                                'PublicCert' = "$([System.Convert]::ToBase64String($ClientPublicCert))"
-                                'NetworkAdapters' = $($nodeinfo.NetworkAdapters)
-                } | ConvertTo-Json
-
-                [Reflection.Assembly]::LoadWithPartialName('System.Messaging') | Out-Null
-                do 
-                {
-                    try 
-                    {
-                        $msg = New-Object System.Messaging.Message
-                        $msg.Label = 'execute'
-                        $msg.Body = $MessageBody
-                        $queueName = "FormatName:DIRECT=HTTPS://$($using:PullServerName)/msmq/private$/rsdsc"
-                        $queue = New-Object System.Messaging.MessageQueue ($queueName, $False, $False)                        
-                        Write-Verbose "Trying to register with pull server: $queueName"
-                        $queue.Send($msg)
-                        Write-Verbose "Waiting 60 seconds for pull server to generate mof file..."
-                        Start-Sleep -Seconds 60
-                        $Uri = "https://$($using:PullServerName):$($using:PullServerPort)/PSDSCPullServer.svc/Action(ConfigurationId=`'$($nodeinfo.uuid)`')/ConfigurationContent"
-                        Write-Verbose "Checking if client configuration has been generated..."
-                        Write-Verbose "Using the following URI: $Uri"
-                        $statusCode = (Invoke-WebRequest -Uri $Uri -ErrorAction SilentlyContinue -UseBasicParsing).statuscode
-                    }
-                    catch 
-                    {
-                        Write-Verbose "Error retrieving configuration: $($_.Exception.message)"
-                    }
-                }
-                while($statusCode -ne 200)
-                Write-Verbose "Looks like client mof file has been generated on the pull server!"
-            }
-            TestScript = {
-                # We really want to run this every time
-                Return $false
-                }
-            GetScript = {
-                # Not terribly relevant in this instance
-                return @{
-                    'Result' = $true
-                }
-            }
-            DependsOn = @('[WindowsFeature]MSMQ','[Script]GetPullPublicCert','[Script]CreateEncryptionCertificate','[Script]SetHostFile')
-        }
-        #>
         LocalConfigurationManager
         {
             AllowModuleOverwrite = 'True'
@@ -1316,7 +1260,6 @@ else
     
     # Kick-off Client Regitration process
     Write-Verbose "Registering DSC Client with the Pull server..."
-    #$Settings = Get-DSCSettingValue -Key "ConfigID","ClientConfig","ClientRegCertName","ClientDSCCertName","PullServerName","PullServerPort"
     $PullDSCUri = "https://$($DSCSettings.PullServerName):$($DSCSettings.PullServerPort)/PSDSCPullServer.svc/Action(ConfigurationId=`'$($DSCSettings.ConfigID)`')/ConfigurationContent"
     do 
     {
