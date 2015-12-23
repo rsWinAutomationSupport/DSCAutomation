@@ -8,7 +8,7 @@
 .EXAMPLE
    Another example of how to use this cmdlet
 #>
-function Process-DSCClientRegistrations
+function Invoke-DSCClientRegistration
 {
     [CmdletBinding()]
     [OutputType([int])]
