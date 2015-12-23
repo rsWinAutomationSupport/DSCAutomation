@@ -63,11 +63,11 @@ function Invoke-DSCClientRegistration
             $bodyJson = $msg.Body
             $body = $bodyJson | ConvertFrom-Json
             $registrationCert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2
-            $certData = [System.Convert]::FromBase64String($body.publicCert)
+            $certData = [System.Convert]::FromBase64String($body.ClientDSCCert)
             try
             {
                 $registrationCert.Import($certData)
-                Write-Verbose "Cert Import successful, Thumbprint: $($cert.Thumbprint)"
+                Write-Verbose "Cert Import successful, Thumbprint: $($registrationCert.Thumbprint)"
             }
             catch [System.Security.Cryptography.CryptographicException]
             {
@@ -92,15 +92,15 @@ function Invoke-DSCClientRegistration
                 }
                 
                 $CertificatesFolderPath = Join-Path -Path $installPath -ChildPath "Certificates"
-                $destinationFile = "$CertificatesFolderPath\$($body.uuid).cer"
+                $destinationFile = "$CertificatesFolderPath\$($body.ConfigID).cer"
                 if ( (Test-Path $destinationFile) )
                 {
                     Write-Verbose "Destination Certificate file already exists"
                 }
                 else
                 {
-                    $CertificateFileData = $cert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert)
-                    [System.IO.File]::WriteAllBytes($destinationCert, $CertificateFileData)
+                    $CertificateFileData = $registrationCert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert)
+                    [System.IO.File]::WriteAllBytes($destinationFile, $CertificateFileData)
                 }
             }
         }
