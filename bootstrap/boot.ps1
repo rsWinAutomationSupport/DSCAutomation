@@ -1290,9 +1290,6 @@ else
 
     ClientBoot  -ConfigurationData $configData  -OutputPath $DSCbootMofFolder -Verbose
     Start-DscConfiguration -Force -Path $DSCbootMofFolder -Wait -Verbose
-    
-    Write-Verbose "Configure Client LCM"
-    # Set-DscLocalConfigurationManager -Path $DSCbootMofFolder -Verbose
 
     # Procecss additional bootstrap parameters that are needed for our DSC clients
     $SettingKeyFilterSet = @(
@@ -1317,10 +1314,45 @@ else
     $CertThumbprint = (Get-ChildItem Cert:\LocalMachine\My | Where-Object -FilterScript {$_.Subject -eq "CN=$ClientDSCCertName"}).Thumbprint
     Protect-DSCAutomationSettings -CertThumbprint $CertThumbprint -Settings $DSCSettings -Path "$InstallPath\DSCAutomationSettings.xml" -Verbose
     
-    <#    
+    # Kick-off Client Regitration process
+    Write-Verbose "Registering DSC Client with the Pull server..."
+    #$Settings = Get-DSCSettingValue -Key "ConfigID","ClientConfig","ClientRegCertName","ClientDSCCertName","PullServerName","PullServerPort"
+    $PullDSCUri = "https://$($DSCSettings.PullServerName):$($DSCSettings.PullServerPort)/PSDSCPullServer.svc/Action(ConfigurationId=`'$($DSCSettings.ConfigID)`')/ConfigurationContent"
+    do 
+    {
+        try 
+        {
+            $RegResult = Submit-DSCClientRegistration -PullServerName $DSCSettings.PullServerName `
+                                                      -ClientDSCCertName $DSCSettings.ClientDSCCertName `
+                                                      -ConfigID $DSCSettings.ConfigID `
+                                                      -ClientConfig $DSCSettings.ClientConfig `
+                                                      -ClientRegCertName $DSCSettings.ClientRegCertName `
+                                                      -Verbose
+            if ($RegResult -ne "Success")
+            {
+                Throw "Client registration did not succeed"
+            }
+            Write-Verbose "Waiting 60 seconds for pull server to generate mof file..."
+            Start-Sleep -Seconds 60
+            Write-Verbose "Checking if client configuration has been generated..."
+            $StatusCode = (Invoke-WebRequest -Uri $PullDSCUri -ErrorAction SilentlyContinue -UseBasicParsing).StatusCode
+        }
+        catch 
+        {
+            Write-Verbose "Error retrieving client configuration: $($_.Exception.message)"
+            Write-Verbose "Target pull server URI: $PullDSCUri"
+            Write-Verbose "Waiting 60 seconds before retrying..."
+            Start-Sleep -Seconds 60
+        }
+    }
+    while($StatusCode -ne 200)
+    Write-Verbose "Client mof file found on the pull server!"
+
+    Write-Verbose "Configuring Client LCM"
+    Set-DscLocalConfigurationManager -Path $DSCbootMofFolder -Verbose
+    
     Write-Verbose "Applying final Client DSC Configuration from Pull server - $PullServerName"
     Update-DscConfiguration -Wait -Verbose
-    #>
 }
 
 if (Get-ScheduledTask -TaskName 'DSCBoot' -ErrorAction SilentlyContinue)
@@ -1331,5 +1363,5 @@ if (Get-ScheduledTask -TaskName 'DSCBoot' -ErrorAction SilentlyContinue)
 
 Stop-Transcript
 
-Write-Verbose "The bootstrap process has completed"
+Write-Verbose "Client Bootstrap process is complete!"
 #endregion
