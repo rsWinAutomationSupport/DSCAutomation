@@ -37,6 +37,7 @@ function Invoke-DSCClientRegistration
     $queue = New-Object System.Messaging.MessageQueue ".\private$\$QueueName"
     $queue.Formatter.TargetTypeNames = ,"System.String"
     $installPath = Get-DSCSettingValue InstallPath
+    $nodeDataPath = Get-DSCSettingValue NodeDataPath
     do
     {
         $msg = $null
@@ -99,9 +100,35 @@ function Invoke-DSCClientRegistration
                 }
                 else
                 {
+                    Write-Verbose "Saving Client Certificate to $destinationFile"
                     $CertificateFileData = $registrationCert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert)
                     [System.IO.File]::WriteAllBytes($destinationFile, $CertificateFileData)
                 }
+            }
+            $nodesData = Get-Content $nodeDataPath -Raw | ConvertFrom-Json
+            if ( $nodesData.Nodes.ConfigID -notcontains $body.ConfigID )
+            {
+                Write-Verbose "ConfigID not found in NodesData, adding new entry"
+                $nodesData.Nodes += New-Object -TypeName psobject -Property @{
+                            'NodeName'     = $body.ClientName
+                            'ConfigID'     = $body.ConfigID
+                            'ClientConfig' = $body.ClientConfig
+                            'timestamp'    = Get-Date
+                        }
+                Set-Content -Path $nodeDataPath -Value ($nodesData | ConvertTo-Json)
+            }
+            else {
+                Write-Verbose "ConfigID found in NodesData, updating existing entry"
+                $currentNode = $nodesData.Nodes | Where-Object { $_.ConfigID -eq $body.ConfigID }
+                foreach($property in $currentNode.PSObject.Properties) {
+                    if($body.PSObject.Properties.Name -contains $property.Name) {
+
+                        ($nodesData.Nodes  | Where-Object { $_.ConfigID -eq $body.ConfigID } ).$($property.Name) = $body.$($property.Name)
+                    }
+                    #($nodesJson.Nodes  | ? uuid -eq $($msg.uuid)).timeStamp = "$timeStamp"
+                }
+                ($nodesData.Nodes  | Where-Object { $_.ConfigID -eq $body.ConfigID } ).timestamp = Get-Date
+                Set-Content -Path $nodeDataPath -Value ($nodesData | ConvertTo-Json)
             }
         }
 
