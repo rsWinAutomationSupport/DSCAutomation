@@ -923,62 +923,6 @@ Configuration ClientBoot
                 }
             }
         }
-
-        <# This section is to be replaced with Arnie-based registration API request
-        # Retreieve all key local client variable and push them to Pull server via MSMQ to register
-        Script SendClientPublicCert
-        {
-            SetScript = {
-                $nodeinfo = Get-Content $using:NodeInfoPath -Raw | ConvertFrom-Json
-                $ClientPublicCert = ((Get-ChildItem Cert:\LocalMachine\My | Where-Object Subject -eq "CN=$env:COMPUTERNAME`_enc").RawData)
-                $MessageBody = @{'Name' = "$env:COMPUTERNAME"
-                                'uuid' = $($nodeinfo.uuid)
-                                'dsc_config' = $($nodeinfo.dsc_config)
-                                'shared_key' = $($nodeinfo.shared_key)
-                                'PublicCert' = "$([System.Convert]::ToBase64String($ClientPublicCert))"
-                                'NetworkAdapters' = $($nodeinfo.NetworkAdapters)
-                } | ConvertTo-Json
-
-                [Reflection.Assembly]::LoadWithPartialName('System.Messaging') | Out-Null
-                do 
-                {
-                    try 
-                    {
-                        $msg = New-Object System.Messaging.Message
-                        $msg.Label = 'execute'
-                        $msg.Body = $MessageBody
-                        $queueName = "FormatName:DIRECT=HTTPS://$($using:PullServerName)/msmq/private$/rsdsc"
-                        $queue = New-Object System.Messaging.MessageQueue ($queueName, $False, $False)                        
-                        Write-Verbose "Trying to register with pull server: $queueName"
-                        $queue.Send($msg)
-                        Write-Verbose "Waiting 60 seconds for pull server to generate mof file..."
-                        Start-Sleep -Seconds 60
-                        $Uri = "https://$($using:PullServerName):$($using:PullServerPort)/PSDSCPullServer.svc/Action(ConfigurationId=`'$($nodeinfo.uuid)`')/ConfigurationContent"
-                        Write-Verbose "Checking if client configuration has been generated..."
-                        Write-Verbose "Using the following URI: $Uri"
-                        $statusCode = (Invoke-WebRequest -Uri $Uri -ErrorAction SilentlyContinue -UseBasicParsing).statuscode
-                    }
-                    catch 
-                    {
-                        Write-Verbose "Error retrieving configuration: $($_.Exception.message)"
-                    }
-                }
-                while($statusCode -ne 200)
-                Write-Verbose "Looks like client mof file has been generated on the pull server!"
-            }
-            TestScript = {
-                # We really want to run this every time
-                Return $false
-                }
-            GetScript = {
-                # Not terribly relevant in this instance
-                return @{
-                    'Result' = $true
-                }
-            }
-            DependsOn = @('[WindowsFeature]MSMQ','[Script]GetPullPublicCert','[Script]CreateEncryptionCertificate','[Script]SetHostFile')
-        }
-        #>
         LocalConfigurationManager
         {
             AllowModuleOverwrite = 'True'
@@ -1290,9 +1234,6 @@ else
 
     ClientBoot  -ConfigurationData $configData  -OutputPath $DSCbootMofFolder -Verbose
     Start-DscConfiguration -Force -Path $DSCbootMofFolder -Wait -Verbose
-    
-    Write-Verbose "Configure Client LCM"
-    # Set-DscLocalConfigurationManager -Path $DSCbootMofFolder -Verbose
 
     # Procecss additional bootstrap parameters that are needed for our DSC clients
     $SettingKeyFilterSet = @(
@@ -1317,10 +1258,44 @@ else
     $CertThumbprint = (Get-ChildItem Cert:\LocalMachine\My | Where-Object -FilterScript {$_.Subject -eq "CN=$ClientDSCCertName"}).Thumbprint
     Protect-DSCAutomationSettings -CertThumbprint $CertThumbprint -Settings $DSCSettings -Path "$InstallPath\DSCAutomationSettings.xml" -Verbose
     
-    <#    
+    # Kick-off Client Regitration process
+    Write-Verbose "Registering DSC Client with the Pull server..."
+    $PullDSCUri = "https://$($DSCSettings.PullServerName):$($DSCSettings.PullServerPort)/PSDSCPullServer.svc/Action(ConfigurationId=`'$($DSCSettings.ConfigID)`')/ConfigurationContent"
+    do 
+    {
+        try 
+        {
+            $RegResult = Submit-DSCClientRegistration -PullServerName $DSCSettings.PullServerName `
+                                                      -ClientDSCCertName $DSCSettings.ClientDSCCertName `
+                                                      -ConfigID $DSCSettings.ConfigID `
+                                                      -ClientConfig $DSCSettings.ClientConfig `
+                                                      -ClientRegCertName $DSCSettings.ClientRegCertName `
+                                                      -Verbose
+            if ($RegResult -ne "Success")
+            {
+                Throw "Client registration did not succeed"
+            }
+            Write-Verbose "Waiting 60 seconds for pull server to generate mof file..."
+            Start-Sleep -Seconds 60
+            Write-Verbose "Checking if client configuration has been generated..."
+            $StatusCode = (Invoke-WebRequest -Uri $PullDSCUri -ErrorAction SilentlyContinue -UseBasicParsing).StatusCode
+        }
+        catch 
+        {
+            Write-Verbose "Error retrieving client configuration: $($_.Exception.message)"
+            Write-Verbose "Target pull server URI: $PullDSCUri"
+            Write-Verbose "Waiting 60 seconds before retrying..."
+            Start-Sleep -Seconds 60
+        }
+    }
+    while($StatusCode -ne 200)
+    Write-Verbose "Client mof file found on the pull server!"
+
+    Write-Verbose "Configuring Client LCM"
+    Set-DscLocalConfigurationManager -Path $DSCbootMofFolder -Verbose
+    
     Write-Verbose "Applying final Client DSC Configuration from Pull server - $PullServerName"
     Update-DscConfiguration -Wait -Verbose
-    #>
 }
 
 if (Get-ScheduledTask -TaskName 'DSCBoot' -ErrorAction SilentlyContinue)
@@ -1331,5 +1306,5 @@ if (Get-ScheduledTask -TaskName 'DSCBoot' -ErrorAction SilentlyContinue)
 
 Stop-Transcript
 
-Write-Verbose "The bootstrap process has completed"
+Write-Verbose "Client Bootstrap process is complete!"
 #endregion
