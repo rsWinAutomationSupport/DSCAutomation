@@ -15,7 +15,6 @@ function Invoke-DSCClientRegistration
     Param
     (
         # Full path to registered client data file
-        [Parameter(Mandatory=$true)]
         [string]
         $ClientDataPath,
         
@@ -36,8 +35,8 @@ function Invoke-DSCClientRegistration
     [Reflection.Assembly]::LoadWithPartialName("System.Messaging") | Out-Null
     $queue = New-Object System.Messaging.MessageQueue ".\private$\$QueueName"
     $queue.Formatter.TargetTypeNames = ,"System.String"
-    $installPath = Get-DSCSettingValue InstallPath
-    $nodeDataPath = Get-DSCSettingValue NodeDataPath
+    $installPath = (Get-DSCSettingValue InstallPath)["InstallPath"]
+    $nodeDataPath = (Get-DSCSettingValue NodeDataPath)["NodeDataPath"]
     do
     {
         $msg = $null
