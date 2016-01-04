@@ -126,7 +126,7 @@ function Invoke-DSCClientRegistration
 
     if ($GenerateMof)
     {
-        # Execute Start-DSCmofGeneration
+        Start-DSCClientMOFGeneration 
     }
 }
 
