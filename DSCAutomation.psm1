@@ -33,51 +33,6 @@ function Invoke-PreBootScript
     }
 }
 
-# For DSC Clients, takes $PullServerAddress and sets PullServerIP and PullServerName variables
-# If PullServerAddress is an IP, PullServerName is derived from the CN on the PullServer endpoint certificate
-function Get-PullServerInfo
-{
-    param
-    (
-        [string] $PullServerAddress,
-        [int] $PullPort,
-        [int] $SleepSeconds = 10
-    )
-
-    # Check if PullServeraddress is a hostname or IP
-    if($PullServerAddress -match '[a-zA-Z]')
-    {
-        $PullServerName = $PullServerAddress
-    }
-    else
-    {
-        $PullServerAddress | Set-Variable -Name PullServerIP -Scope Global
-        # Attempt to get the PullServer's hostname from the certificate attached to the endpoint. 
-        # Will not proceed unless a CN name is found.
-        $uri = "https://$PullServerAddress`:$PullServerPort"
-        do
-        {
-            $webRequest = [Net.WebRequest]::Create($uri)
-            try 
-            {
-                Write-Verbose "Attempting to connect to Pull server and retrieve its public certificate..."
-                $webRequest.GetResponse()
-            }
-            catch 
-            {
-            }
-            Write-Verbose "Retrieveing Pull Server Name from its certificate"
-            $PullServerName = $webRequest.ServicePoint.Certificate.Subject -replace '^CN\=','' -replace ',.*$',''
-            if( -not($PullServerName) )
-            {
-                Write-Verbose "Could not retrieved server name from certificate - sleeping for $SleepSeconds seconds..."
-                Start-Sleep -Seconds $SleepSeconds
-            }
-        } while ( -not($PullServerName) )
-    }
-    return $PullServerName
-}
-
 <#
 .Synopsis
    Encrypt DSC Automation settings.
