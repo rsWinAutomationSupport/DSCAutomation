@@ -558,7 +558,6 @@ function Remove-ClientMofFiles
 function Start-DSCClientMOFGeneration
 {
     [CmdletBinding()]
-    [OutputType([int])]
     Param
     (
         # Full path to registered client data file
@@ -577,27 +576,39 @@ function Start-DSCClientMOFGeneration
         [string]
         $configHashPath = (Join-Path $InstallPath "temp"),
 
+        # Name of the event log to use for logging
+        [string]
+        $LogName = (Get-DSCSettingValue "LogName")["LogName"],
+
         [string]
         $PullConfig = (Get-DSCSettingValue PullServerConfig)["PullServerConfig"]
     )
 
+    $LogSourceName = $MyInvocation.MyCommand.Name
+    if ( -not ([System.Diagnostics.EventLog]::SourceExists($LogSourceName)) ) 
+    {
+        [System.Diagnostics.EventLog]::CreateEventSource($LogSourceName, $LogName)
+    }
+
+    Write-Verbose "Reading the node data file.."
     $nodesData = Get-Content $NodeDataPath -Raw | ConvertFrom-Json
 
     # Remove mof & checksums that no longer exist in client data file
     # First create an exclusions list with correct format
-    $exclusions = $allServers.ConfigID | ForEach-Object { $_,"mof" -join ".";$_,"mof.checksum" -join "."}
+    $exclusions = $nodesData.Nodes.ConfigID | ForEach-Object { $_,"mof" -join ".";$_,"mof.checksum" -join "."}
 
     # Remove the 
     $removalList = Get-ChildItem $MOFDestPath -Exclude $exclusions
     if( $removalList )
     {
+        Write-Verbose "Removing mof files for non-existent clients..."
         Remove-Item -Path $removalList.FullName -Force
     }
 
     # Check configurations for updates by comparing each config file and its hash
-    $configs = ($allServers.ClientConfig | Where-Object {$_.ClientConfig -ne $PullConfig} | Sort -Unique)
+    $configs = ($nodesData.Nodes.ClientConfig | Where-Object {$_.ClientConfig -ne $PullConfig} | Sort -Unique)
 
-    # Remove mof files if the main DSC client config file has been updated and generate new config checksum
+    # Remove affected mof files if the main DSC client config file has been updated and generate new config file checksum
     foreach( $config in $configs )
     {
         $confFile = Join-Path $configPath $config
@@ -614,13 +625,16 @@ function Start-DSCClientMOFGeneration
             if( !(Test-ConfigFileHash -file $confFile -hash $confHash) )
             {
                 Write-Verbose "$confFile has been modified - regenerating affected mofs..."
+                Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 3010 -EntryType Information -Message "$confFile has been modified - regenerating affected mofs..."
                 foreach( $server in $($allServers | Where-Object ClientConfig -eq $config) )
                 {
                     Write-Verbose "Removing outdated mof file for $($server.ClientName) - $($server.ConfigID)"
+                    Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 3011 -EntryType Information -Message "Removing outdated mof file for $($server.ClientName) - $($server.ConfigID)"
                     Remove-ClientMofFiles -ConfigID $($server.ConfigID) -MOFDestPath $MOFDestPath
                 }
 
                 Write-Verbose "Generating new checksum for $confFile"
+                Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 3012 -EntryType Information -Message "Generating new checksum for $confFile"
                 Set-Content -Path $confHash -Value (Get-FileHash -Path $confFile).hash
             }
         }
@@ -630,13 +644,14 @@ function Start-DSCClientMOFGeneration
             if ( Test-Path $confHash )
             {
                 Write-Verbose "Removing $confHash"
+                Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 3013 -EntryType Information -Message "Removing $confHash"
                 Remove-Item -Path $confHash -Force
             }
         }
     }
 
     # Generate new or replace outdated mof and checksum files
-    foreach( $server in $allServers )
+    foreach( $server in $nodesData.Nodes )
     {
         $confFile = Join-Path $ConfigPath $server.ClientConfig
         $mofFile = (($mofDestPath,$server.ConfigID -join '\'),'mof' -join '.')
@@ -649,13 +664,16 @@ function Start-DSCClientMOFGeneration
                 try
                 {
                     Write-Verbose "Recreating mofs for $($server.ClientName)"
+                    Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 3021 -EntryType Information -Message "Recreating mofs for $($server.ClientName)"
                     Remove-ClientMofFiles -ConfigID $($server.ConfigID) -MOFDestPath $MOFDestPath
-                    Write-Verbose "Calling $confFile `n $($server.ClientName) `n $($server.ConfigID)"                   
-                    & $confFile -Node $server.ClientName -Objectuuid $server.ConfigID -Verbose
+                    Write-Verbose "Calling $confFile `n $($server.ClientName) `n $($server.ConfigID)"
+                    Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 3022 -EntryType Information -Message "Calling $confFile `n $($server.ClientName) `n $($server.ConfigID)"
+                    & $confFile -Node $server.ClientName -ClientID $server.ConfigID -Verbose
                 }
                 catch 
                 {
                     Write-Verbose "Error creating mof for $($server.ClientName) using $confFile `n$($_.Exception.message)"
+                    Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 3023 -EntryType Error -Message "Error creating mof for $($server.ClientName) using $confFile `n$($_.Exception.message) `n $_"
                 }
             }
         }
@@ -663,7 +681,9 @@ function Start-DSCClientMOFGeneration
         {
             # Remove left-over mofs for any servers with missing dsc configuration
             Write-Verbose "WARNING: $($server.ClientName) dsc configuration file not found: $confFile"
+            Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 3030 -EntryType Warning -Message "WARNING: $($server.ClientName) dsc configuration file not found: $confFile"
             Remove-ClientMofFiles -ConfigID $($server.ConfigID) -MOFDestPath $MOFDestPath
         }
     }
 }
+
