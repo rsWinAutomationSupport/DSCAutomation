@@ -35,13 +35,13 @@ function Invoke-PreBootScript
 
 <#
 .Synopsis
-   Encrypt DSC Automation settings.
+   Save DSC Automation settings to a file
 .DESCRIPTION
    This function will encrypt the values within a hashtable object (-Settings) using an existing certificate and save the output on the file system.
 .EXAMPLE
    Protect-DSCAutomationSettings -CertThumbprint <cert-thumbprint> -Settings <settings hashtable> -Path <output destination> -Verbose
 #>
-function Protect-DSCAutomationSettings 
+function Protect-DSCAutomationSettings
 {
     [CmdletBinding()]
     param
@@ -114,10 +114,10 @@ function Protect-DSCAutomationSettings
 
 <#
 .Synopsis
-   Decrypt the encrypted DSCAutomation settings file values.
+   Decrypt the encrypted DSCAutomation settings file values
 .DESCRIPTION
    This function will access the encrypted DSC Automation settings file, then use pull server's certificate to decrypt the AES key 
-   for each setting value in order to generate and return a set of PSCredential objects.
+   for each setting value in order to generate and return a set of PSCredential objects
 .EXAMPLE
    Unprotect-DSCAutomationSettings
 .EXAMPLE
