@@ -578,7 +578,7 @@ function Start-DSCClientMOFGeneration
         $configHashPath = (Join-Path $InstallPath "temp"),
 
         [string]
-        $PullConfig = "rsPullServer.ps1"
+        $PullConfig = (Get-DSCSettingValue PullServerConfig)["PullServerConfig"]
     )
 
     $nodesData = Get-Content $NodeDataPath -Raw | ConvertFrom-Json
