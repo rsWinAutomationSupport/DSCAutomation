@@ -509,3 +509,161 @@ function Submit-DSCClientRegistration
         Write-Verbose "Target pull server URI: $RegistrationUri"
     }
 }
+
+<#
+.Synopsis
+   Remove old client MOF files
+.DESCRIPTION
+   Used as part of MOF file lifecycle management to remove old mof files and their checksums
+.EXAMPLE
+   Remove-ClientMofFiles -ConfigID <dsc client id> -MOFDestPath <path where mof files are stored>
+.EXAMPLE
+   Remove-ClientMofFiles -ConfigID <dsc client id> 
+#>
+function Remove-ClientMofFiles
+{
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory=$true)]
+        [string]
+        $ConfigID,
+
+        [Parameter(Mandatory=$false)]
+        [string]
+        $MOFDestPath = "$env:ProgramFiles\WindowsPowerShell\DscService\Configuration"
+    )
+
+    $MofFile = (($MofPath,$ConfigID -join '\'),'mof' -join '.')
+    $MofFileHash = ($MofFile,'checksum' -join '.')
+        
+    if( Test-Path $MofFile )
+    {
+        Remove-Item $MofFile -Force -ErrorAction SilentlyContinue
+    }
+        
+    if( Test-Path $MofFileHash )
+    {
+        Remove-Item $MofFileHash -Force -ErrorAction SilentlyContinue
+    }
+}
+
+<#
+.Synopsis
+   Generate client MOF files
+.DESCRIPTION
+   Process nodeData file and generate/re-generate mof files where needed.
+.EXAMPLE
+   Start-DSCClientMOFGeneration
+#>
+function Start-DSCClientMOFGeneration
+{
+    [CmdletBinding()]
+    [OutputType([int])]
+    Param
+    (
+        # Full path to registered client data file
+        [string]
+        $NodeDataPath = (Get-DSCSettingValue NodeDataPath)["NodeDataPath"],
+        
+        [string]
+        $MOFDestPath = "$env:ProgramFiles\WindowsPowerShell\DscService\Configuration",
+
+        [string]
+        $InstallPath = (Get-DSCSettingValue InstallPath)["InstallPath"],
+
+        [string]
+        $ConfigPath = (Join-Path $InstallPath ((Get-DSCSettingValue GitRepoName)["GitRepoName"])),
+        
+        [string]
+        $configHashPath = (Join-Path $InstallPath "temp"),
+
+        [string]
+        $PullConfig = "rsPullServer.ps1"
+    )
+
+    $nodesData = Get-Content $NodeDataPath -Raw | ConvertFrom-Json
+
+    # Remove mof & checksums that no longer exist in client data file
+    # First create an exclusions list with correct format
+    $exclusions = $allServers.ConfigID | ForEach-Object { $_,"mof" -join ".";$_,"mof.checksum" -join "."}
+
+    # Remove the 
+    $removalList = Get-ChildItem $MOFDestPath -Exclude $exclusions
+    if( $removalList )
+    {
+        Remove-Item -Path $removalList.FullName -Force
+    }
+
+    # Check configurations for updates by comparing each config file and its hash
+    $configs = ($allServers.ClientConfig | Where-Object {$_.ClientConfig -ne $PullConfig} | Sort -Unique)
+
+    # Remove mof files if the main DSC client config file has been updated and generate new config checksum
+    foreach( $config in $configs )
+    {
+        $confFile = Join-Path $configPath $config
+        if ($configHashPath)
+        {
+            $confHash = Join-Path $configHashPath $($config,'checksum' -join '.')
+        }
+        else
+        {
+            $confHash = Join-Path $configPath $($config,'checksum' -join '.')
+        }     
+        if (Test-Path $confFile)
+        {
+            if( !(Test-ConfigFileHash -file $confFile -hash $confHash) )
+            {
+                Write-Verbose "$confFile has been modified - regenerating affected mofs..."
+                foreach( $server in $($allServers | Where-Object ClientConfig -eq $config) )
+                {
+                    Write-Verbose "Removing outdated mof file for $($server.ClientName) - $($server.ConfigID)"
+                    Remove-ClientMofFiles -ConfigID $($server.ConfigID) -MOFDestPath $MOFDestPath
+                }
+
+                Write-Verbose "Generating new checksum for $confFile"
+                Set-Content -Path $confHash -Value (Get-FileHash -Path $confFile).hash
+            }
+        }
+        else
+        {
+            # A bit of checksum house keeping 
+            if ( Test-Path $confHash )
+            {
+                Write-Verbose "Removing $confHash"
+                Remove-Item -Path $confHash -Force
+            }
+        }
+    }
+
+    # Generate new or replace outdated mof and checksum files
+    foreach( $server in $allServers )
+    {
+        $confFile = Join-Path $ConfigPath $server.ClientConfig
+        $mofFile = (($mofDestPath,$server.ConfigID -join '\'),'mof' -join '.')
+        $mofFileHash = ($mofFile,'checksum' -join '.')
+
+        if (Test-Path $confFile)
+        {
+            if( !(Test-Path $MofFile) -or !(Test-Path $MofFileHash) -or !(TestHash -file $mofFile -hash $mofFileHash))
+            {
+                try
+                {
+                    Write-Verbose "Recreating mofs for $($server.ClientName)"
+                    Remove-ClientMofFiles -ConfigID $($server.ConfigID) -MOFDestPath $MOFDestPath
+                    Write-Verbose "Calling $confFile `n $($server.ClientName) `n $($server.ConfigID)"                   
+                    & $confFile -Node $server.ClientName -Objectuuid $server.ConfigID -Verbose
+                }
+                catch 
+                {
+                    Write-Verbose "Error creating mof for $($server.ClientName) using $confFile `n$($_.Exception.message)"
+                }
+            }
+        }
+        else
+        {
+            # Remove left-over mofs for any servers with missing dsc configuration
+            Write-Verbose "WARNING: $($server.ClientName) dsc configuration file not found: $confFile"
+            Remove-ClientMofFiles -ConfigID $($server.ConfigID) -MOFDestPath $MOFDestPath
+        }
+    }
+}
