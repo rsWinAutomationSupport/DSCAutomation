@@ -18,10 +18,7 @@ function Invoke-DSCClientRegistration
 
         [string]
         $InstallPath = (Get-DSCSettingValue InstallPath)["InstallPath"],
-        
-        [string]
-        $MOFDestPath = "$env:ProgramFiles\WindowsPowerShell\DscService\Configuration",
-        
+                
         [string]
         $QueueName = (Get-DSCSettingValue RegQueueName)["RegQueueName"]
     )
