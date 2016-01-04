@@ -1,12 +1,10 @@
 <#
 .Synopsis
-   Short description
+   Process Pull server's registration queue
 .DESCRIPTION
-   Long description
+   Reads client registration messages in the registration queue and adds the client registration data to the local node database and installs the client certificates.
 .EXAMPLE
-   Example of how to use this cmdlet
-.EXAMPLE
-   Another example of how to use this cmdlet
+   Invoke-DSCClientRegistration
 #>
 function Invoke-DSCClientRegistration
 {
@@ -16,27 +14,23 @@ function Invoke-DSCClientRegistration
     (
         # Full path to registered client data file
         [string]
-        $ClientDataPath,
+        $NodeDataPath = (Get-DSCSettingValue NodeDataPath)["NodeDataPath"],
+
+        [string]
+        $InstallPath = (Get-DSCSettingValue InstallPath)["InstallPath"],
         
         [string]
         $MOFDestPath = "$env:ProgramFiles\WindowsPowerShell\DscService\Configuration",
         
         [string]
-        $ClientConfigPath,
-        
-        [string]
-        $ClientConfigHashPath,
-        
-        [string]
-        $QueueName = "dscAutomation"
-
+        $QueueName = (Get-DSCSettingValue RegQueueName)["RegQueueName"]
     )
 
     [Reflection.Assembly]::LoadWithPartialName("System.Messaging") | Out-Null
     $queue = New-Object System.Messaging.MessageQueue ".\private$\$QueueName"
     $queue.Formatter.TargetTypeNames = ,"System.String"
-    $installPath = (Get-DSCSettingValue InstallPath)["InstallPath"]
-    $nodeDataPath = (Get-DSCSettingValue NodeDataPath)["NodeDataPath"]
+    $GenerateMof = $false
+
     do
     {
         $msg = $null
@@ -72,7 +66,6 @@ function Invoke-DSCClientRegistration
             catch [System.Security.Cryptography.CryptographicException]
             {
                 Write-Verbose "Could not import Certificate from message"
-                #$_
             }
 
             if ( $registrationCert.Thumbprint )
@@ -104,7 +97,7 @@ function Invoke-DSCClientRegistration
                     [System.IO.File]::WriteAllBytes($destinationFile, $CertificateFileData)
                 }
             }
-            $nodesData = Get-Content $nodeDataPath -Raw | ConvertFrom-Json
+            $nodesData = Get-Content $NodeDataPath -Raw | ConvertFrom-Json
             if ( $nodesData.Nodes.ConfigID -notcontains $body.ConfigID )
             {
                 Write-Verbose "ConfigID not found in NodesData, adding new entry"
@@ -114,25 +107,29 @@ function Invoke-DSCClientRegistration
                             'ClientConfig' = $body.ClientConfig
                             'timestamp'    = Get-Date
                         }
-                Set-Content -Path $nodeDataPath -Value ($nodesData | ConvertTo-Json)
+                Set-Content -Path $NodeDataPath -Value ($nodesData | ConvertTo-Json)
+                $GenerateMof = $true
             }
-            else {
+            else 
+            {
                 Write-Verbose "ConfigID found in NodesData, updating existing entry"
                 $currentNode = $nodesData.Nodes | Where-Object { $_.ConfigID -eq $body.ConfigID }
                 foreach($property in $currentNode.PSObject.Properties) {
-                    if($body.PSObject.Properties.Name -contains $property.Name) {
-
+                    if($body.PSObject.Properties.Name -contains $property.Name) 
+                    {
                         ($nodesData.Nodes  | Where-Object { $_.ConfigID -eq $body.ConfigID } ).$($property.Name) = $body.$($property.Name)
                     }
-                    #($nodesJson.Nodes  | ? uuid -eq $($msg.uuid)).timeStamp = "$timeStamp"
                 }
                 ($nodesData.Nodes  | Where-Object { $_.ConfigID -eq $body.ConfigID } ).timestamp = Get-Date
-                Set-Content -Path $nodeDataPath -Value ($nodesData | ConvertTo-Json)
+                Set-Content -Path $NodeDataPath -Value ($nodesData | ConvertTo-Json)
+                $GenerateMof = $true
             }
         }
+    } while ($msg)
 
-
-     } while ($msg)
-
+    if ($GenerateMof)
+    {
+        # Execute Start-DSCmofGeneration
+    }
 }
 
