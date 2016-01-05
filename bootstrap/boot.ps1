@@ -893,7 +893,7 @@ Configuration ClientBoot
             }
             DependsOn = @('[Script]SetHostFile')
         }
-        # If PullServerAddress was an IP, set a HOSTS entry to resolve PullServer hostname
+        # Install the client registration cert that was provided initialy
         Script InstallClientRegistrationcert 
         {
             SetScript = {
