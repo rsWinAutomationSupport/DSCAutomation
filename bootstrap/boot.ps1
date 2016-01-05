@@ -1217,7 +1217,8 @@ else
     if ($ConfigID -eq $null)
     {
         Write-Verbose "Generating client configuration ID..."
-        $BootParameters.Add('ConfigID',[Guid]::NewGuid().Guid)
+        $ConfigID = [Guid]::NewGuid().Guid
+        $BootParameters.Add('ConfigID',$ConfigID)
     }
     else
     {
