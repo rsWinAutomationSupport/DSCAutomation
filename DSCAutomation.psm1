@@ -33,60 +33,15 @@ function Invoke-PreBootScript
     }
 }
 
-# For DSC Clients, takes $PullServerAddress and sets PullServerIP and PullServerName variables
-# If PullServerAddress is an IP, PullServerName is derived from the CN on the PullServer endpoint certificate
-function Get-PullServerInfo
-{
-    param
-    (
-        [string] $PullServerAddress,
-        [int] $PullPort,
-        [int] $SleepSeconds = 10
-    )
-
-    # Check if PullServeraddress is a hostname or IP
-    if($PullServerAddress -match '[a-zA-Z]')
-    {
-        $PullServerName = $PullServerAddress
-    }
-    else
-    {
-        $PullServerAddress | Set-Variable -Name PullServerIP -Scope Global
-        # Attempt to get the PullServer's hostname from the certificate attached to the endpoint. 
-        # Will not proceed unless a CN name is found.
-        $uri = "https://$PullServerAddress`:$PullServerPort"
-        do
-        {
-            $webRequest = [Net.WebRequest]::Create($uri)
-            try 
-            {
-                Write-Verbose "Attempting to connect to Pull server and retrieve its public certificate..."
-                $webRequest.GetResponse()
-            }
-            catch 
-            {
-            }
-            Write-Verbose "Retrieveing Pull Server Name from its certificate"
-            $PullServerName = $webRequest.ServicePoint.Certificate.Subject -replace '^CN\=','' -replace ',.*$',''
-            if( -not($PullServerName) )
-            {
-                Write-Verbose "Could not retrieved server name from certificate - sleeping for $SleepSeconds seconds..."
-                Start-Sleep -Seconds $SleepSeconds
-            }
-        } while ( -not($PullServerName) )
-    }
-    return $PullServerName
-}
-
 <#
 .Synopsis
-   Encrypt DSC Automation settings.
+   Save DSC Automation settings to a file
 .DESCRIPTION
    This function will encrypt the values within a hashtable object (-Settings) using an existing certificate and save the output on the file system.
 .EXAMPLE
    Protect-DSCAutomationSettings -CertThumbprint <cert-thumbprint> -Settings <settings hashtable> -Path <output destination> -Verbose
 #>
-function Protect-DSCAutomationSettings 
+function Protect-DSCAutomationSettings
 {
     [CmdletBinding()]
     param
@@ -159,10 +114,10 @@ function Protect-DSCAutomationSettings
 
 <#
 .Synopsis
-   Decrypt the encrypted DSCAutomation settings file values.
+   Decrypt the encrypted DSCAutomation settings file values
 .DESCRIPTION
    This function will access the encrypted DSC Automation settings file, then use pull server's certificate to decrypt the AES key 
-   for each setting value in order to generate and return a set of PSCredential objects.
+   for each setting value in order to generate and return a set of PSCredential objects
 .EXAMPLE
    Unprotect-DSCAutomationSettings
 .EXAMPLE
@@ -553,4 +508,361 @@ function Submit-DSCClientRegistration
         Write-Verbose "Please verify connectivity to and check functionality of the pull server"
         Write-Verbose "Target pull server URI: $RegistrationUri"
     }
+}
+
+<#
+.Synopsis
+   Process Pull server's registration queue
+.DESCRIPTION
+   Reads client registration messages in the registration queue and adds the client registration data to the local node database and installs the client certificates.
+.EXAMPLE
+   Invoke-DSCClientRegistration
+#>
+function Invoke-DSCClientRegistration
+{
+    [CmdletBinding()]
+    [OutputType([int])]
+    Param
+    (
+        # Full path to registered client data file
+        [string]
+        $NodeDataPath = (Get-DSCSettingValue NodeDataPath)["NodeDataPath"],
+
+        [string]
+        $InstallPath = (Get-DSCSettingValue InstallPath)["InstallPath"],
+                
+        [string]
+        $QueueName = (Get-DSCSettingValue RegQueueName)["RegQueueName"]
+    )
+
+    [Reflection.Assembly]::LoadWithPartialName("System.Messaging") | Out-Null
+    $queue = New-Object System.Messaging.MessageQueue ".\private$\$QueueName"
+    $queue.Formatter.TargetTypeNames = ,"System.String"
+    $GenerateMof = $false
+
+    do
+    {
+        $msg = $null
+        try
+        {
+            $msg = $queue.Receive((New-TimeSpan -Seconds 2))
+        }
+        catch [System.Messaging.MessageQueueException]
+        {
+            if ( $_.Exception.ToString().Contains("Timeout for the requested operation has expired.") )
+            {
+                Write-Verbose "No messages found after specified timeout"
+                return
+            }
+            else
+            {
+                throw $_
+            }
+        }
+
+        if ($msg)
+        {
+            Write-Verbose "$($msg.Count) message(s) received"
+            $bodyJson = $msg.Body
+            $body = $bodyJson | ConvertFrom-Json
+            $registrationCert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2
+            $certData = [System.Convert]::FromBase64String($body.ClientDSCCert)
+            try
+            {
+                $registrationCert.Import($certData)
+                Write-Verbose "Cert Import successful, Thumbprint: $($registrationCert.Thumbprint)"
+            }
+            catch [System.Security.Cryptography.CryptographicException]
+            {
+                Write-Verbose "Could not import Certificate from message"
+            }
+
+            if ( $registrationCert.Thumbprint )
+            {
+                $destinationCert = Get-ChildItem -Path Cert:\LocalMachine\My | Where-Object { $_.Thumbprint -eq $registrationCert.Thumbprint }
+                if ( $destinationCert )
+                {
+                    Write-Verbose "Client Certificate already exists in destination store"
+                }
+                else
+                {
+                    Write-Verbose "Adding Client Certificate to destination store"
+                    $store = Get-Item -Path Cert:\LocalMachine\My
+                    $store.Open([System.Security.Cryptography.X509Certificates.OpenFlags]::MaxAllowed)
+                    $store.Add($registrationCert)
+                    $store.Close()
+                }
+                
+                $CertificatesFolderPath = Join-Path -Path $installPath -ChildPath "Certificates"
+                $destinationFile = "$CertificatesFolderPath\$($body.ConfigID).cer"
+                if ( (Test-Path $destinationFile) )
+                {
+                    Write-Verbose "Destination Certificate file already exists"
+                }
+                else
+                {
+                    Write-Verbose "Saving Client Certificate to $destinationFile"
+                    $CertificateFileData = $registrationCert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert)
+                    [System.IO.File]::WriteAllBytes($destinationFile, $CertificateFileData)
+                }
+            }
+            $nodesData = Get-Content $NodeDataPath -Raw | ConvertFrom-Json
+            if ( $nodesData.Nodes.ConfigID -notcontains $body.ConfigID )
+            {
+                Write-Verbose "ConfigID not found in NodesData, adding new entry"
+                $nodesData.Nodes += New-Object -TypeName psobject -Property @{
+                            'NodeName'     = $body.ClientName
+                            'ConfigID'     = $body.ConfigID
+                            'ClientConfig' = $body.ClientConfig
+                            'timestamp'    = (Get-Date -Format u)
+                        }
+                Set-Content -Path $NodeDataPath -Value ($nodesData | ConvertTo-Json)
+                $GenerateMof = $true
+            }
+            else 
+            {
+                Write-Verbose "ConfigID found in NodesData, updating existing entry"
+                $currentNode = $nodesData.Nodes | Where-Object { $_.ConfigID -eq $body.ConfigID }
+                foreach($property in $currentNode.PSObject.Properties) {
+                    if($body.PSObject.Properties.Name -contains $property.Name) 
+                    {
+                        ($nodesData.Nodes  | Where-Object { $_.ConfigID -eq $body.ConfigID } ).$($property.Name) = $body.$($property.Name)
+                    }
+                }
+                ($nodesData.Nodes  | Where-Object { $_.ConfigID -eq $body.ConfigID } ).timestamp = (Get-Date -Format u)
+                Set-Content -Path $NodeDataPath -Value ($nodesData | ConvertTo-Json)
+                $GenerateMof = $true
+            }
+        }
+    } while ($msg)
+
+    if ($GenerateMof)
+    {
+        Start-DSCClientMOFGeneration -Verbose
+    }
+}
+
+<#
+.Synopsis
+   Remove old client MOF files
+.DESCRIPTION
+   Used as part of MOF file lifecycle management to remove old mof files and their checksums
+.EXAMPLE
+   Remove-ClientMofFiles -ConfigID <dsc client uuid> -MOFDestPath <path where mof files are stored>
+.EXAMPLE
+   Remove-ClientMofFiles -ConfigID <dsc client uuid> 
+#>
+function Remove-ClientMofFiles
+{
+    [CmdletBinding()]
+    param (
+        [Parameter(Mandatory=$true)]
+        [string]
+        $ConfigID,
+
+        [Parameter(Mandatory=$false)]
+        [string]
+        $MOFDestPath = "$env:ProgramFiles\WindowsPowerShell\DscService\Configuration"
+    )
+
+    $MofFile = (($MofPath,$ConfigID -join '\'),'mof' -join '.')
+    $MofFileHash = ($MofFile,'checksum' -join '.')
+        
+    if( Test-Path $MofFile )
+    {
+        Remove-Item $MofFile -Force -ErrorAction SilentlyContinue
+    }
+        
+    if( Test-Path $MofFileHash )
+    {
+        Remove-Item $MofFileHash -Force -ErrorAction SilentlyContinue
+    }
+}
+
+<#
+.Synopsis
+   Generate client MOF files
+.DESCRIPTION
+   Process nodeData file and generate/re-generate mof files where needed.
+.EXAMPLE
+   Start-DSCClientMOFGeneration
+#>
+function Start-DSCClientMOFGeneration
+{
+    [CmdletBinding()]
+    Param
+    (
+        # Full path to registered client data file
+        [string]
+        $NodeDataPath = (Get-DSCSettingValue NodeDataPath)["NodeDataPath"],
+        
+        [string]
+        $MOFDestPath = "$env:ProgramFiles\WindowsPowerShell\DscService\Configuration",
+
+        [string]
+        $InstallPath = (Get-DSCSettingValue InstallPath)["InstallPath"],
+
+        [string]
+        $ConfigPath = (Join-Path $InstallPath ((Get-DSCSettingValue GitRepoName)["GitRepoName"])),
+        
+        [string]
+        $configHashPath = (Join-Path $InstallPath "temp"),
+
+        # Name of the event log to use for logging
+        [string]
+        $LogName = (Get-DSCSettingValue "LogName")["LogName"],
+
+        [string]
+        $PullConfig = (Get-DSCSettingValue PullServerConfig)["PullServerConfig"]
+    )
+
+    $LogSourceName = $MyInvocation.MyCommand.Name
+    if ( -not ([System.Diagnostics.EventLog]::SourceExists($LogSourceName)) ) 
+    {
+        [System.Diagnostics.EventLog]::CreateEventSource($LogSourceName, $LogName)
+    }
+
+    Write-Verbose "Reading the node data file.."
+    $nodesData = Get-Content $NodeDataPath -Raw | ConvertFrom-Json
+
+    # Remove mof & checksums that no longer exist in client data file
+    # First create an exclusions list with correct format
+    $exclusions = $nodesData.Nodes.ConfigID | ForEach-Object { $_,"mof" -join ".";$_,"mof.checksum" -join "."}
+
+    # Remove the 
+    $removalList = Get-ChildItem $MOFDestPath -Exclude $exclusions
+    if( $removalList )
+    {
+        Write-Verbose "Removing mof files for non-existent clients..."
+        Remove-Item -Path $removalList.FullName -Force
+    }
+
+    # Check configurations for updates by comparing each config file and its hash
+    $configs = ($nodesData.Nodes.ClientConfig | Where-Object {$_.ClientConfig -ne $PullConfig} | Sort -Unique)
+
+    # Remove affected mof files if the main DSC client config file has been updated and generate new config file checksum
+    foreach( $config in $configs )
+    {
+        $confFile = Join-Path $configPath $config
+        if ($configHashPath)
+        {
+            $confHash = Join-Path $configHashPath $($config,'checksum' -join '.')
+        }
+        else
+        {
+            $confHash = Join-Path $configPath $($config,'checksum' -join '.')
+        }     
+        if (Test-Path $confFile)
+        {
+            if( !(Test-ConfigFileHash -file $confFile -hash $confHash) )
+            {
+                Write-Verbose "$confFile has been modified - regenerating affected mofs..."
+                Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 3010 -EntryType Information -Message "$confFile has been modified - regenerating affected mofs..."
+                foreach( $server in $($allServers | Where-Object ClientConfig -eq $config) )
+                {
+                    Write-Verbose "Removing outdated mof file for $($server.ClientName) - $($server.ConfigID)"
+                    Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 3011 -EntryType Information -Message "Removing outdated mof file for $($server.ClientName) - $($server.ConfigID)"
+                    Remove-ClientMofFiles -ConfigID $($server.ConfigID) -MOFDestPath $MOFDestPath
+                }
+
+                Write-Verbose "Generating new checksum for $confFile"
+                Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 3012 -EntryType Information -Message "Generating new checksum for $confFile"
+                Set-Content -Path $confHash -Value (Get-FileHash -Path $confFile).hash
+            }
+        }
+        else
+        {
+            # A bit of checksum house keeping 
+            if ( Test-Path $confHash )
+            {
+                Write-Verbose "Removing $confHash"
+                Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 3013 -EntryType Information -Message "Removing $confHash"
+                Remove-Item -Path $confHash -Force
+            }
+        }
+    }
+
+    # Generate new or replace outdated mof and checksum files
+    foreach( $server in $nodesData.Nodes )
+    {
+        $confFile = Join-Path $ConfigPath $server.ClientConfig
+        $mofFile = (($mofDestPath,$server.ConfigID -join '\'),'mof' -join '.')
+        $mofFileHash = ($mofFile,'checksum' -join '.')
+
+        if (Test-Path $confFile)
+        {
+            if( !(Test-Path $MofFile) -or !(Test-Path $MofFileHash) -or !(Test-ConfigFileHash -file $mofFile -hash $mofFileHash))
+            {
+                try
+                {
+                    Write-Verbose "Recreating mofs for $($server.NodeName)"
+                    Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 3021 -EntryType Information -Message "Recreating mofs for $($server.NodeName)"
+                    Remove-ClientMofFiles -ConfigID $($server.ConfigID) -MOFDestPath $MOFDestPath
+                    Write-Verbose "Calling $confFile `n $($server.NodeName) `n $($server.ConfigID)"
+                    Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 3022 -EntryType Information -Message "Calling $confFile `n $($server.NodeName) `n $($server.ConfigID)"
+                    & $confFile -Node $server.NodeName -ClientID $server.ConfigID -Verbose
+                }
+                catch 
+                {
+                    Write-Verbose "Error creating mof for $($server.NodeName) using $confFile `n$($_.Exception.message)"
+                    Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 3023 -EntryType Error -Message "Error creating mof for $($server.NodeName) using $confFile `n$($_.Exception.message) `n $_"
+                }
+            }
+        }
+        else
+        {
+            # Remove left-over mofs for any servers with missing dsc configuration
+            Write-Verbose "WARNING: $($server.NodeName) dsc configuration file not found: $confFile"
+            Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 3030 -EntryType Warning -Message "DSC configuration file for $($server.NodeName) not found: $confFile"
+            Remove-ClientMofFiles -ConfigID $($server.ConfigID) -MOFDestPath $MOFDestPath
+        }
+    }
+}
+
+<#
+.Synopsis
+   Remove old client nodes and related assets
+.DESCRIPTION
+   Used to remove old client nodes and their certificates/mof files from pull server
+.EXAMPLE
+   Example of how to use this cmdlet
+#>
+function Invoke-DSCHouseKeeping
+{
+    [CmdletBinding()]
+    [OutputType([int])]
+    Param
+    (
+        [string]
+        $InstallPath = (Get-DSCSettingValue "InstallPath")["InstallPath"],
+
+        [string]
+        $configHashPath = (Join-Path $InstallPath "temp"),
+
+        # Name of the event log to use for logging
+        [string]
+        $LogName = (Get-DSCSettingValue "LogName")["LogName"],
+
+        [string]
+        $MOFDestPath = "$env:ProgramFiles\WindowsPowerShell\DscService\Configuration",
+
+        # Number of days to keep old client records
+        [int]
+        $Age = 30
+    )
+    
+    $LogSourceName = $MyInvocation.MyCommand.Name
+    if ( -not ([System.Diagnostics.EventLog]::SourceExists($LogSourceName)) ) 
+    {
+        [System.Diagnostics.EventLog]::CreateEventSource($LogSourceName, $LogName)
+    }
+
+
+        <# Moved this from Start-DSCClientMOFGeneration
+        {
+            # Remove left-over mofs for any servers with missing dsc configuration
+            Write-Verbose "WARNING: $($server.NodeName) dsc configuration file not found: $confFile"
+            Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 3030 -EntryType Warning -Message "DSC configuration file for $($server.NodeName) not found: $confFile"
+            Remove-ClientMofFiles -ConfigID $($server.ConfigID) -MOFDestPath $MOFDestPath
+        #>
 }

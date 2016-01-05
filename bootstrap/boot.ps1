@@ -188,6 +188,20 @@ Configuration PullBoot
             Ensure = 'Present'
             Type = 'Directory'
         }
+        File CreateCertDir
+        {
+            DestinationPath = $(Join-Path $BootParameters.InstallPath "Certificates")
+            Ensure = 'Present'
+            Type = 'Directory'
+            DependsOn = "[File]CreateInstallDir"
+        }
+        File CreateTempDir
+        {
+            DestinationPath = $(Join-Path $BootParameters.InstallPath "Temp")
+            Ensure = 'Present'
+            Type = 'Directory'
+            DependsOn = "[File]CreateInstallDir"
+        }
         Script DSCAutomationLog
         {
             GetScript = { 
@@ -1203,7 +1217,8 @@ else
     if ($ConfigID -eq $null)
     {
         Write-Verbose "Generating client configuration ID..."
-        $BootParameters.Add('ConfigID',[Guid]::NewGuid().Guid)
+        $ConfigID = [Guid]::NewGuid().Guid
+        $BootParameters.Add('ConfigID',$ConfigID)
     }
     else
     {
