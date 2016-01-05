@@ -648,9 +648,9 @@ function Invoke-DSCClientRegistration
 .DESCRIPTION
    Used as part of MOF file lifecycle management to remove old mof files and their checksums
 .EXAMPLE
-   Remove-ClientMofFiles -ConfigID <dsc client id> -MOFDestPath <path where mof files are stored>
+   Remove-ClientMofFiles -ConfigID <dsc client uuid> -MOFDestPath <path where mof files are stored>
 .EXAMPLE
-   Remove-ClientMofFiles -ConfigID <dsc client id> 
+   Remove-ClientMofFiles -ConfigID <dsc client uuid> 
 #>
 function Remove-ClientMofFiles
 {
@@ -817,4 +817,52 @@ function Start-DSCClientMOFGeneration
             Remove-ClientMofFiles -ConfigID $($server.ConfigID) -MOFDestPath $MOFDestPath
         }
     }
+}
+
+<#
+.Synopsis
+   Remove old client nodes and related assets
+.DESCRIPTION
+   Used to remove old client nodes and their certificates/mof files from pull server
+.EXAMPLE
+   Example of how to use this cmdlet
+#>
+function Invoke-DSCHouseKeeping
+{
+    [CmdletBinding()]
+    [OutputType([int])]
+    Param
+    (
+        [string]
+        $InstallPath = (Get-DSCSettingValue "InstallPath")["InstallPath"],
+
+        [string]
+        $configHashPath = (Join-Path $InstallPath "temp"),
+
+        # Name of the event log to use for logging
+        [string]
+        $LogName = (Get-DSCSettingValue "LogName")["LogName"],
+
+        [string]
+        $MOFDestPath = "$env:ProgramFiles\WindowsPowerShell\DscService\Configuration",
+
+        # Number of days to keep old client records
+        [int]
+        $Age = 30
+    )
+    
+    $LogSourceName = $MyInvocation.MyCommand.Name
+    if ( -not ([System.Diagnostics.EventLog]::SourceExists($LogSourceName)) ) 
+    {
+        [System.Diagnostics.EventLog]::CreateEventSource($LogSourceName, $LogName)
+    }
+
+
+        <# Moved this from Start-DSCClientMOFGeneration
+        {
+            # Remove left-over mofs for any servers with missing dsc configuration
+            Write-Verbose "WARNING: $($server.NodeName) dsc configuration file not found: $confFile"
+            Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 3030 -EntryType Warning -Message "DSC configuration file for $($server.NodeName) not found: $confFile"
+            Remove-ClientMofFiles -ConfigID $($server.ConfigID) -MOFDestPath $MOFDestPath
+        #>
 }
