@@ -10,7 +10,8 @@ A suite of tools for fully automated deployments of a DSC Pull server and its cl
 
 ### Manual deployment
 
-*Server*
+**Server**
+
 To build a pull server, use the following command and replace the <highlighted> parameters with suitable values: 
 ```PoSh
 Invoke-WebRequest 'https://raw.githubusercontent.com/rsWinAutomationSupport/DSCAutomation/aa-updates/bootstrap/boot.ps1' -OutFile 'c:\boot.ps1'
@@ -18,7 +19,8 @@ Invoke-WebRequest 'https://raw.githubusercontent.com/rsWinAutomationSupport/DSCA
 ```
 To use a DNS name for your pull server, please remember to provide this optional parameter at the time of executing boot script: `-PullServerAddress "pull.domain.local"` 
 
-*Client*
+**Client**
+
 Before you can bootstrap a client, you need to retrieve the auto-generated registration certificate form the pull server using this command:
 ```PoSh
 Get-DSCClientRegistrationCert
