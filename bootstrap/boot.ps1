@@ -1254,6 +1254,7 @@ else
     $SettingKeyFilterSet = @(
                              "InstallPath",
                              "ClientRegCertName",
+                             "PullServerAddress",
                              "PullServerName",
                              "PullServerPort",
                              "ClientDSCCertName",
