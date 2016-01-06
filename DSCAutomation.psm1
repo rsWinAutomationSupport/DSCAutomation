@@ -552,7 +552,6 @@ function Invoke-DSCClientRegistration
             if ( $_.Exception.ToString().Contains("Timeout for the requested operation has expired.") )
             {
                 Write-Verbose "No messages found after specified timeout"
-                return
             }
             else
             {
@@ -594,12 +593,36 @@ function Invoke-DSCClientRegistration
                 }
                 
                 $CertificatesFolderPath = Join-Path -Path $installPath -ChildPath "Certificates"
+                if ( -not (Test-Path -Path $CertificatesFolderPath) )
+                {
+                    New-Item -Path $CertificatesFolderPath -ItemType Directory
+                }
                 $destinationFile = "$CertificatesFolderPath\$($body.ConfigID).cer"
+                $saveClientCertificate = $false
                 if ( (Test-Path $destinationFile) )
                 {
                     Write-Verbose "Destination Certificate file already exists"
+                    $destinationFileCert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2
+                    $destinationFileCertBytes = [System.IO.File]::ReadAllBytes($destinationFile)
+                    $destinationFileCert.Import($destinationFileCertBytes)
+                    if ( $registrationCert.Thumbprint -eq $destinationFileCert.Thumbprint )
+                    {
+                        Write-Verbose "Destination Certificate file thumbprint and Client Certificate thumbprint match, no action required"
+                    }
+                    else
+                    {
+                        Write-Verbose "Destination Certificate file thumbprint and Client Certificate Thumbprint do not match"
+                        $saveClientCertificate = $true
+                    }
+
                 }
                 else
+                {
+                    Write-Verbose "Client Certificate does not exist"
+                    $saveClientCertificate = $true
+                }
+
+                if ( $saveClientCertificate )
                 {
                     Write-Verbose "Saving Client Certificate to $destinationFile"
                     $CertificateFileData = $registrationCert.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Cert)
