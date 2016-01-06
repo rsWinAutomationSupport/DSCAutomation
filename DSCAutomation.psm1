@@ -324,7 +324,7 @@ function Invoke-DSCPullConfigurationSync
 
         # Path to folder where t ostore the checksum file
         [string]
-        $HashPath = $InstallPath,
+        $HashPath = (Join-Path $InstallPath "Temp"),
 
         # Force pull server configuration generation
         [switch]
