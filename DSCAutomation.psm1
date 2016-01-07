@@ -525,7 +525,6 @@ function Submit-DSCClientRegistration
 function Invoke-DSCClientRegistration
 {
     [CmdletBinding()]
-    [OutputType([int])]
     Param
     (
         # Full path to registered client data file
