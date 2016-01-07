@@ -733,7 +733,7 @@ function Start-DSCClientMOFGeneration
         $ConfigPath = (Join-Path $InstallPath ((Get-DSCSettingValue GitRepoName)["GitRepoName"])),
         
         [string]
-        $configHashPath = (Join-Path $InstallPath "temp"),
+        $ConfigHashPath = (Join-Path $InstallPath "temp"),
 
         # Name of the event log to use for logging
         [string]
@@ -750,11 +750,11 @@ function Start-DSCClientMOFGeneration
     }
 
     Write-Verbose "Reading the node data file.."
-    $nodesData = Get-Content $NodeDataPath -Raw | ConvertFrom-Json
+    $NodesData = Get-Content $NodeDataPath -Raw | ConvertFrom-Json
 
     # Remove mof & checksums that no longer exist in client data file
     # First create an exclusions list with correct format
-    $exclusions = $nodesData.Nodes.ConfigID | ForEach-Object { $_,"mof" -join ".";$_,"mof.checksum" -join "."}
+    $exclusions = $NodesData.Nodes.ConfigID | ForEach-Object { $_,"mof" -join ".";$_,"mof.checksum" -join "."}
 
     # Remove the 
     $removalList = Get-ChildItem $MOFDestPath -Exclude $exclusions
@@ -827,7 +827,7 @@ function Start-DSCClientMOFGeneration
                     Remove-ClientMofFiles -ConfigID $($server.ConfigID) -MOFDestPath $MOFDestPath
                     Write-Verbose "Calling $confFile `n $($server.NodeName) `n $($server.ConfigID)"
                     Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 3022 -EntryType Information -Message "Calling $confFile `n $($server.NodeName) `n $($server.ConfigID)"
-                    & $confFile -Node $server.NodeName -ClientID $server.ConfigID -Verbose
+                    & $confFile -Node $server.NodeName -ConfigID $server.ConfigID -Verbose
                 }
                 catch 
                 {
