@@ -345,11 +345,6 @@ function Invoke-DSCPullConfigurationSync
     # Ensure that we are using the most recent $path variable
     $env:path = [System.Environment]::GetEnvironmentVariable("Path","Machine")
     
-    # Setup our path variables
-    $ConfDir = Join-Path $InstallPath $GitRepoName
-    $PullConf = Join-Path $ConfDir $PullServerConfig
-    $GitDir = "$ConfDir\.git"
-
     # Delay Pull server conf regen until ongoing LCM run completes
     Write-Verbose "Checking LCM State..."
     $LCMStates = @("Idle","PendingConfiguration")
@@ -369,7 +364,12 @@ function Invoke-DSCPullConfigurationSync
         } while ($LCMStates -notcontains $LCMState)
     }
     Write-Verbose "Getting latest changes to configuration repository..."
-    & git --git-dir=$GitDir pull
+    # Setup our path variables
+    $ConfDir = Join-Path $InstallPath $GitRepoName
+    $PullConf = Join-Path $ConfDir $PullServerConfig
+    Push-Location -Path $ConfDir
+    & git pull
+    Pop-Location
 
     # Check pull server DSC configuration
     $CurrentHash = (Get-FileHash $PullConf).hash
