@@ -371,12 +371,16 @@ function Invoke-DSCPullConfigurationSync
     Write-Verbose "Getting latest changes to configuration repository..."
     & git --git-dir=$GitDir pull
 
+    # Check pull server DSC configuration
     $CurrentHash = (Get-FileHash $PullConf).hash
     $HashFilePath = (Join-Path $HashPath $($PullServerConfig,'checksum' -join '.'))
-    # if  $PullConf checksum does not match
     if( -not (Test-ConfigFileHash -file $PullConf -hash $HashFilePath) -or ($Force))
     {
-        Write-Verbose "Executing Pull server DSC configuration..."
+        Write-Verbose "Executing Pull server DSC configuration"
+        if ($UseLog)
+        {
+            Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 2003 -EntryType Information -Message "Executing Pull server DSC configuration"
+        }
         & $PullConf
         Set-Content -Path $HashFilePath -Value (Get-FileHash -Path $PullConf).hash
     }
