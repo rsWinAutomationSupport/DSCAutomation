@@ -322,7 +322,7 @@ function Invoke-DSCPullConfigurationSync
         [string]
         $LogName = (Get-DSCSettingValue "LogName").LogName,
 
-        # Path to folder where t ostore the checksum file
+        # Path to folder where to store the checksum file
         [string]
         $HashPath = (Join-Path $InstallPath "Temp"),
 
@@ -372,7 +372,7 @@ function Invoke-DSCPullConfigurationSync
     & git --git-dir=$GitDir pull
 
     $CurrentHash = (Get-FileHash $PullConf).hash
-    $HashFilePath = (Join-Path $HashPath $($PullServerConfig,'hash' -join '.'))
+    $HashFilePath = (Join-Path $HashPath $($PullServerConfig,'checksum' -join '.'))
     # if  $PullConf checksum does not match
     if( -not (Test-ConfigFileHash -file $PullConf -hash $HashFilePath) -or ($Force))
     {
