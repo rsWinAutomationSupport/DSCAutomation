@@ -937,6 +937,13 @@ Configuration ClientBoot
                 }
             }
         }
+    } 
+}
+
+Configuration ClientLCM
+{
+    Node $env:COMPUTERNAME 
+    {
         LocalConfigurationManager
         {
             AllowModuleOverwrite = 'True'
@@ -952,6 +959,7 @@ Configuration ClientBoot
         }
     } 
 }
+
 #endregion
 function Install-PlatformModules 
 {
@@ -1226,8 +1234,6 @@ else
         $BootParameters.Add('ConfigID',$ConfigID)
     }
 
-    Write-Verbose "Executing client DSC boot configuration..."
-
     # Populate Client Boot DSC configuration data
     $ConfigData = @{
         AllNodes = @(
@@ -1246,9 +1252,13 @@ else
             }
         )
     }
-
-    ClientBoot  -ConfigurationData $configData  -OutputPath $DSCbootMofFolder -Verbose
+    Write-Verbose "Executing client DSC boot configuration..."
+    ClientBoot -ConfigurationData $configData  -OutputPath $DSCbootMofFolder -Verbose
     Start-DscConfiguration -Force -Path $DSCbootMofFolder -Wait -Verbose
+
+    Write-Verbose "Setting Client LCM configuration..."
+    ClientLCM -ConfigurationData $configData  -OutputPath $DSCbootMofFolder -Verbose
+    Set-DscLocalConfigurationManager -Path $DSCbootMofFolder -Verbose
 
     # Procecss additional bootstrap parameters that are needed for our DSC clients
     $SettingKeyFilterSet = @(
