@@ -353,8 +353,8 @@ function Invoke-DSCPullConfigurationSync
     # Delay Pull server conf regen until ongoing LCM run completes
     Write-Verbose "Checking LCM State..."
     $LCMStates = @("Idle","PendingConfiguration")
-    $LCMtate = (Get-DscLocalConfigurationManager).LCMState
-    if ($LCMStates -notcontains $LCMtate)
+    $LCMState = (Get-DscLocalConfigurationManager).LCMState
+    if ($LCMStates -notcontains $LCMState)
     {
         if ($UseLog)
         {
@@ -362,11 +362,11 @@ function Invoke-DSCPullConfigurationSync
         }
         Do
         {
-            $LCMtate = (Get-DscLocalConfigurationManager).LCMState
+            $LCMState = (Get-DscLocalConfigurationManager).LCMState
             Write-Verbose "LCM State is $LCMState "
             Sleep -Seconds 5
-            $LCMtate = (Get-DscLocalConfigurationManager).LCMState
-        } while ($LCMStates -notcontains $LCMtate)
+            $LCMState = (Get-DscLocalConfigurationManager).LCMState
+        } while ($LCMStates -notcontains $LCMState)
     }
     Write-Verbose "Getting latest changes to configuration repository..."
     & git --git-dir=$GitDir pull
