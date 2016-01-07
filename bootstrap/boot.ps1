@@ -151,7 +151,7 @@ else
 }
 
 Write-Verbose "Setting folder permissions for $InstallPath"
-Write-Verbose " - Disable persmission inheritance on $InstallPath"
+Write-Verbose " - Disable permission inheritance on $InstallPath"
 $objACL = Get-ACL -Path $InstallPath
 $objACL.SetAccessRuleProtection($True, $True)
 Set-ACL $InstallPath $objACL
