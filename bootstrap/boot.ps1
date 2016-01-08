@@ -1135,6 +1135,9 @@ if ($PullServerConfig)
 
     if ($SwitchDSCModuleToGit)
     {
+        # Ensure that current path variable is up-to-date
+        $env:path = [System.Environment]::GetEnvironmentVariable("Path","Machine")
+        
         Write-Verbose "Switching module $BootModuleName to a git repository"
         Push-Location -Path "$PSModuleLocation\$BootModuleName"
         git init
