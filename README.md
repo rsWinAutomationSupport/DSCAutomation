@@ -4,7 +4,7 @@ A suite of tools for fully automated deployments of a DSC Pull server and its cl
 
 ### Changelog
 
-- Initial release based on the rsBoot proof of concept. 
+- Initial release closely based on the rsBoot POC by Rackspace Windows Automation team. 
 
 ## Example usage
 
@@ -21,11 +21,11 @@ To use a DNS name for your pull server, please remember to provide this optional
 
 **Client**
 
-Before you can bootstrap a client, you need to retrieve the auto-generated registration certificate form the pull server using this command:
+Before you can bootstrap a client, you need to retrieve the auto-generated registration certificate from the pull server using this command:
 ```PoSh
 Get-DSCClientRegistrationCert
 ```
-The above will generate a base64-encoded string that contains the registration certificate that must be passed to client bootstrap script in order to authenticate it with the pull server. Copy the full text output of this command and use on the client as part of its bootstrap command: 
+The above will generate a base64-encoded string that contains the registration certificate which then needs to be passed to client bootstrap script in order to authenticate it with the pull server. Copy the full text output of this command and use on the client as part of its bootstrap command: 
 
 ```PoSh
 $RegKey = @'
