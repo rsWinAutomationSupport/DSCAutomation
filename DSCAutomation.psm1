@@ -104,12 +104,12 @@ function Protect-DSCAutomationSettings
     {
         Write-Verbose "Existing settings file found - making a backup..."
         $TimeDate = (Get-Date -Format ddMMMyyyy_hhmmss).ToString()
-        Move-Item $Path -Destination ("$Path`-$TimeDate.bak") -Force
+        Move-Item $Path -Destination ("$Path`-$TimeDate.bak") -Force -Verbose:($PSBoundParameters['Verbose'] -eq $true)
     }
     
     # Save the encrypted databag as a native PS hashtable object
     Write-Verbose "Saving encrypted settings file to $Path"
-    Export-Clixml -InputObject $DSCAutomationSettings -Path $Path -Force
+    Export-Clixml -InputObject $DSCAutomationSettings -Path $Path -Force -Verbose:($PSBoundParameters['Verbose'] -eq $true)
 }
 
 <#
@@ -217,11 +217,11 @@ function Get-DSCSettingValue
     # Decrypt contents ofthe DSCAutomation configuration file
     if ($PSBoundParameters.ContainsKey('Path'))
     {
-        $DSCSettings = Unprotect-DSCAutomationSettings -Path $Path
+        $DSCSettings = Unprotect-DSCAutomationSettings -Path $Path -Verbose:($PSBoundParameters['Verbose'] -eq $true)
     }
     else
     {
-        $DSCSettings = Unprotect-DSCAutomationSettings
+        $DSCSettings = Unprotect-DSCAutomationSettings -Verbose:($PSBoundParameters['Verbose'] -eq $true)
     }
 
     if ($ListAvailable.IsPresent)
@@ -316,7 +316,7 @@ function Invoke-DSCPullConfigurationSync
 
         # Enable extra logging to the event log
         [switch]
-        $UseLog = $false,
+        $UseLog = $true,
 
         # Name of the event log to use for logging
         [string]
@@ -664,7 +664,7 @@ function Invoke-DSCClientRegistration
 
     if ($GenerateMof)
     {
-        Start-DSCClientMOFGeneration -Verbose
+        Start-DSCClientMOFGeneration -Verbose:($PSBoundParameters['Verbose'] -eq $true)
     }
 }
 
@@ -686,22 +686,39 @@ function Remove-ClientMofFiles
         [string]
         $ConfigID,
 
+        # Name of the event log to use for logging
+        [string]
+        $LogName = (Get-DSCSettingValue "LogName")["LogName"],
+
+        # Enable extra logging to the event log
+        [switch]
+        $UseLog = $true,
+
         [Parameter(Mandatory=$false)]
         [string]
         $MOFDestPath = "$env:ProgramFiles\WindowsPowerShell\DscService\Configuration"
     )
+    $LogSourceName = $MyInvocation.MyCommand.Name
+    if (($UseLog) -and -not ([System.Diagnostics.EventLog]::SourceExists($LogSourceName)) ) 
+    {
+        [System.Diagnostics.EventLog]::CreateEventSource($LogSourceName, $LogName)
+    }
 
     $MofFile = (($MofPath,$ConfigID -join '\'),'mof' -join '.')
     $MofFileHash = ($MofFile,'checksum' -join '.')
         
     if( Test-Path $MofFile )
     {
-        Remove-Item $MofFile -Force -ErrorAction SilentlyContinue
+        Remove-Item $MofFile -Force -ErrorAction SilentlyContinue -Verbose:($PSBoundParameters['Verbose'] -eq $true)
     }
         
     if( Test-Path $MofFileHash )
     {
-        Remove-Item $MofFileHash -Force -ErrorAction SilentlyContinue
+        Remove-Item $MofFileHash -Force -ErrorAction SilentlyContinue -Verbose:($PSBoundParameters['Verbose'] -eq $true)
+    }
+    if ($UseLog)
+    {
+        Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 1100 -EntryType Information -Message "Removed client mof files `n $MofFile `n $MofFileHash"
     }
 }
 
@@ -760,7 +777,7 @@ function Start-DSCClientMOFGeneration
     if( $removalList )
     {
         Write-Verbose "Removing mof files for non-existent clients..."
-        Remove-Item -Path $removalList.FullName -Force
+        Remove-Item -Path $removalList.FullName -Force -Verbose:($PSBoundParameters['Verbose'] -eq $true)
     }
 
     # Check configurations for updates by comparing each config file and its hash
@@ -803,7 +820,7 @@ function Start-DSCClientMOFGeneration
             {
                 Write-Verbose "Removing $confHash"
                 Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 3013 -EntryType Information -Message "Removing $confHash"
-                Remove-Item -Path $confHash -Force
+                Remove-Item -Path $confHash -Force -Verbose:($PSBoundParameters['Verbose'] -eq $true)
             }
         }
     }
