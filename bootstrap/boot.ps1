@@ -136,9 +136,10 @@ Set-ExecutionPolicy -Scope LocalMachine -ExecutionPolicy RemoteSigned -Force
 
 Write-Verbose "Setting environment variables"
 [Environment]::SetEnvironmentVariable('defaultPath',$InstallPath,'Machine')
+# Moving to this variable as it is more descriptive
+[Environment]::SetEnvironmentVariable('DSCAutomationPath',$InstallPath,'Machine')
 
 Write-Verbose " - Install path: $InstallPath"
-Write-Verbose " - NodeInfoPath location: $NodeInfoPath"
 
 if (-not(Test-Path $InstallPath))
 {
@@ -959,8 +960,8 @@ Configuration ClientLCM
         }
     } 
 }
-
 #endregion
+
 function Install-PlatformModules 
 {
 # We cannot run this code directly until the rsPlatform module is installed, 
@@ -1332,5 +1333,7 @@ if (Get-ScheduledTask -TaskName 'DSCBoot' -ErrorAction SilentlyContinue)
 
 Stop-Transcript
 
-Write-Verbose "Client Bootstrap process is complete!"
+Move-Item -Path $LogPath -Destination $InstallPath -Verbose
+
+Write-Verbose "DSC Automation Bootstrap process is complete!"
 #endregion
