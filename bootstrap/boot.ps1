@@ -135,8 +135,6 @@ Write-Verbose "Setting LocalMachine execurtion policy to RemoteSigned"
 Set-ExecutionPolicy -Scope LocalMachine -ExecutionPolicy RemoteSigned -Force
 
 Write-Verbose "Setting environment variables"
-[Environment]::SetEnvironmentVariable('defaultPath',$InstallPath,'Machine')
-# Moving to this variable as it is more descriptive
 [Environment]::SetEnvironmentVariable('DSCAutomationPath',$InstallPath,'Machine')
 
 Write-Verbose " - Install path: $InstallPath"
