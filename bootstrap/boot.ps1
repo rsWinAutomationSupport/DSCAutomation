@@ -20,12 +20,24 @@ Param
     [string]
     $InstallPath = (Join-Path $env:ProgramFiles -ChildPath DSCAutomation),
 
-    # URL for the Zip file to download the main DSCAutomation module
-    [string]
-    $BootModuleZipURL = "https://github.com/rsWinAutomationSupport/DSCAutomation/archive/aa-updates.zip",
-
     [string]
     $BootModuleName = "DSCAutomation",
+
+    # Enable WinRM on the system
+    [switch]
+    $SwitchDSCModuleToGit = $true,
+
+    # Git URL the main DSCAutomation module
+    [string]
+    $BootModuleGitURL = "https://github.com/rsWinAutomationSupport/$BootModuleName.git",
+
+    # main DSCAutomation module git branch
+    [string]
+    $BootModuleGitBranch = "aa-updates",
+
+    # URL for the Zip file to download the main DSCAutomation module
+    [string]
+    $BootModuleZipURL = "https://github.com/rsWinAutomationSupport/$BootModuleName/archive/$BootModuleGitBranch.zip",
 
     [string]
     $DSCbootMofFolder = (Join-Path $InstallPath -ChildPath DSCBootMof),
@@ -1117,8 +1129,24 @@ if ($PullServerConfig)
 
     Write-Verbose "Applying initial Pull Server Boot configuration"
     Start-DscConfiguration -Path $DSCbootMofFolder -Wait -Verbose -Force
+    
     Write-Verbose "Running DSC config to install extra DSC modules as defined in rsPlatform"
     Install-PlatformModules
+
+    if ($SwitchDSCModuleToGit)
+    {
+        Write-Verbose "Switching module $BootModuleName to a git repository"
+        Push-Location -Path "$PSModuleLocation\$BootModuleName"
+        git init
+        git remote add origin $BootModuleGitURL
+        git fetch
+        git checkout -b temp
+        git add --all
+        git commit -m "cleaning working directory"
+        git checkout $BootModuleGitBranch
+        git branch -D temp
+        Pop-Location
+    }
 
     # Create Pull server configuration file
     $CertThumbprint = (Get-ChildItem Cert:\LocalMachine\My | 
