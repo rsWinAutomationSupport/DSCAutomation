@@ -48,7 +48,7 @@ function Protect-DSCAutomationSettings
     (
         # Destination path for DSC Automation secure settings file
         [string]
-        $Path = (Join-Path ([System.Environment]::GetEnvironmentVariable("defaultPath","Machine")) "DSCAutomationSettings.xml"),
+        $Path = (Join-Path ([System.Environment]::GetEnvironmentVariable("DSCAutomationPath","Machine")) "DSCAutomationSettings.xml"),
 
         # Certificate hash with which to ecrypt the settigns
         [Parameter(Mandatory=$true)]
@@ -130,7 +130,7 @@ function Unprotect-DSCAutomationSettings
     (
         # Source path for the secure settings file to override the default location
         [string]
-        $Path = (Join-Path ([System.Environment]::GetEnvironmentVariable("defaultPath","Machine")) "DSCAutomationSettings.xml")
+        $Path = (Join-Path ([System.Environment]::GetEnvironmentVariable("DSCAutomationPath","Machine")) "DSCAutomationSettings.xml")
     )
 
     Write-Verbose "Importing the settings databag from $Path"
