@@ -1096,6 +1096,9 @@ $BootParameters = @{}
         }
     }
 
+# Our DSC configuration object may be larger than the default 500kb value, so need to increase it
+Set-Item -Path WSMan:\localhost\MaxEnvelopeSizekb -Value 1000 -Verbose
+
 # WinRM listener configuration
 if ($AddWinRMListener)
 {
