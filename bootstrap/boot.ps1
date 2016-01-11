@@ -105,6 +105,11 @@ Param
     [string]
     $RegQueueName = "DSCAutomation",
 
+    # Days to keep inactive clients before forcing them to re-register
+    [Parameter(ParameterSetName="PullServer", Mandatory=$false)]
+    [int]
+    $InactiveDays = 7,
+
     [Parameter(ParameterSetName="Client", Mandatory=$false)]
     [string]
     $ClientDSCCertName = "$($env:COMPUTERNAME)_DSCClientCert",
@@ -1171,7 +1176,8 @@ if ($PullServerConfig)
                              "PullServerConfig",
                              "PullServerAddress",
                              "LogName",
-                             "RegQueueName"
+                             "RegQueueName",
+                             "InactiveDays"
                             )
     $DSCSettings = @{}
     $BootParameters.GetEnumerator() | foreach {  
