@@ -20,12 +20,24 @@ Param
     [string]
     $InstallPath = (Join-Path $env:ProgramFiles -ChildPath DSCAutomation),
 
-    # URL for the Zip file to download the main DSCAutomation module
-    [string]
-    $BootModuleZipURL = "https://github.com/rsWinAutomationSupport/DSCAutomation/archive/aa-updates.zip",
-
     [string]
     $BootModuleName = "DSCAutomation",
+
+    # Enable WinRM on the system
+    [switch]
+    $SwitchDSCModuleToGit = $true,
+
+    # Git URL the main DSCAutomation module
+    [string]
+    $BootModuleGitURL = "https://github.com/rsWinAutomationSupport/$BootModuleName.git",
+
+    # main DSCAutomation module git branch
+    [string]
+    $BootModuleGitBranch = "aa-updates",
+
+    # URL for the Zip file to download the main DSCAutomation module
+    [string]
+    $BootModuleZipURL = "https://github.com/rsWinAutomationSupport/$BootModuleName/archive/$BootModuleGitBranch.zip",
 
     [string]
     $DSCbootMofFolder = (Join-Path $InstallPath -ChildPath DSCBootMof),
@@ -93,6 +105,11 @@ Param
     [string]
     $RegQueueName = "DSCAutomation",
 
+    # Days to keep inactive clients before forcing them to re-register
+    [Parameter(ParameterSetName="PullServer", Mandatory=$false)]
+    [int]
+    $InactiveDays = 7,
+
     [Parameter(ParameterSetName="Client", Mandatory=$false)]
     [string]
     $ClientDSCCertName = "$($env:COMPUTERNAME)_DSCClientCert",
@@ -108,6 +125,10 @@ Param
     [Parameter(ParameterSetName="Client",Mandatory=$false)]
     [int]
     $ConfigurationModeFrequencyMins = 30,
+
+    [Parameter(ParameterSetName="Client",Mandatory=$false)]
+    [int]
+    $RegRetryTimeout = 30,
 
     [Parameter(ParameterSetName="Client",Mandatory=$false)]
     [int]
@@ -135,10 +156,9 @@ Write-Verbose "Setting LocalMachine execurtion policy to RemoteSigned"
 Set-ExecutionPolicy -Scope LocalMachine -ExecutionPolicy RemoteSigned -Force
 
 Write-Verbose "Setting environment variables"
-[Environment]::SetEnvironmentVariable('defaultPath',$InstallPath,'Machine')
+[Environment]::SetEnvironmentVariable('DSCAutomationPath',$InstallPath,'Machine')
 
 Write-Verbose " - Install path: $InstallPath"
-Write-Verbose " - NodeInfoPath location: $NodeInfoPath"
 
 if (-not(Test-Path $InstallPath))
 {
@@ -151,7 +171,7 @@ else
 }
 
 Write-Verbose "Setting folder permissions for $InstallPath"
-Write-Verbose " - Disable persmission inheritance on $InstallPath"
+Write-Verbose " - Disable permission inheritance on $InstallPath"
 $objACL = Get-ACL -Path $InstallPath
 $objACL.SetAccessRuleProtection($True, $True)
 Set-ACL $InstallPath $objACL
@@ -937,6 +957,13 @@ Configuration ClientBoot
                 }
             }
         }
+    } 
+}
+
+Configuration ClientLCM
+{
+    Node $env:COMPUTERNAME 
+    {
         LocalConfigurationManager
         {
             AllowModuleOverwrite = 'True'
@@ -953,6 +980,7 @@ Configuration ClientBoot
     } 
 }
 #endregion
+
 function Install-PlatformModules 
 {
 # We cannot run this code directly until the rsPlatform module is installed, 
@@ -1077,6 +1105,9 @@ $BootParameters = @{}
         }
     }
 
+# Our DSC configuration object may be larger than the default 500kb value, so need to increase it
+Set-Item -Path WSMan:\localhost\MaxEnvelopeSizekb -Value 1000 -Verbose
+
 # WinRM listener configuration
 if ($AddWinRMListener)
 {
@@ -1110,8 +1141,27 @@ if ($PullServerConfig)
 
     Write-Verbose "Applying initial Pull Server Boot configuration"
     Start-DscConfiguration -Path $DSCbootMofFolder -Wait -Verbose -Force
+    
     Write-Verbose "Running DSC config to install extra DSC modules as defined in rsPlatform"
     Install-PlatformModules
+
+    if ($SwitchDSCModuleToGit)
+    {
+        # Ensure that current path variable is up-to-date
+        $env:path = [System.Environment]::GetEnvironmentVariable("Path","Machine")
+        
+        Write-Verbose "Switching module $BootModuleName to a git repository"
+        Push-Location -Path "$PSModuleLocation\$BootModuleName"
+        git init
+        git remote add origin $BootModuleGitURL
+        git fetch
+        git checkout -b temp
+        git add --all
+        git commit -m "cleaning working directory"
+        git checkout $BootModuleGitBranch
+        git branch -D temp
+        Pop-Location
+    }
 
     # Create Pull server configuration file
     $CertThumbprint = (Get-ChildItem Cert:\LocalMachine\My | 
@@ -1130,7 +1180,8 @@ if ($PullServerConfig)
                              "PullServerConfig",
                              "PullServerAddress",
                              "LogName",
-                             "RegQueueName"
+                             "RegQueueName",
+                             "InactiveDays"
                             )
     $DSCSettings = @{}
     $BootParameters.GetEnumerator() | foreach {  
@@ -1226,8 +1277,6 @@ else
         $BootParameters.Add('ConfigID',$ConfigID)
     }
 
-    Write-Verbose "Executing client DSC boot configuration..."
-
     # Populate Client Boot DSC configuration data
     $ConfigData = @{
         AllNodes = @(
@@ -1246,14 +1295,19 @@ else
             }
         )
     }
-
-    ClientBoot  -ConfigurationData $configData  -OutputPath $DSCbootMofFolder -Verbose
+    Write-Verbose "Executing client DSC boot configuration..."
+    ClientBoot -ConfigurationData $configData  -OutputPath $DSCbootMofFolder -Verbose
     Start-DscConfiguration -Force -Path $DSCbootMofFolder -Wait -Verbose
+
+    Write-Verbose "Setting Client LCM configuration..."
+    ClientLCM -ConfigurationData $configData  -OutputPath $DSCbootMofFolder -Verbose
+    Set-DscLocalConfigurationManager -Path $DSCbootMofFolder -Verbose
 
     # Procecss additional bootstrap parameters that are needed for our DSC clients
     $SettingKeyFilterSet = @(
                              "InstallPath",
                              "ClientRegCertName",
+                             "PullServerAddress",
                              "PullServerName",
                              "PullServerPort",
                              "ClientDSCCertName",
@@ -1290,8 +1344,8 @@ else
             {
                 Throw "Client registration did not succeed"
             }
-            Write-Verbose "Waiting 60 seconds for pull server to generate mof file..."
-            Start-Sleep -Seconds 60
+            Write-Verbose "Waiting $RegRetryTimeout seconds for pull server to generate mof file..."
+            Start-Sleep -Seconds $RegRetryTimeout
             Write-Verbose "Checking if client configuration has been generated..."
             $StatusCode = (Invoke-WebRequest -Uri $PullDSCUri -ErrorAction SilentlyContinue -UseBasicParsing).StatusCode
         }
@@ -1299,8 +1353,8 @@ else
         {
             Write-Verbose "Error retrieving client configuration: $($_.Exception.message)"
             Write-Verbose "Target pull server URI: $PullDSCUri"
-            Write-Verbose "Waiting 60 seconds before retrying..."
-            Start-Sleep -Seconds 60
+            Write-Verbose "Waiting $RegRetryTimeout seconds before retrying..."
+            Start-Sleep -Seconds $RegRetryTimeout
         }
     }
     while($StatusCode -ne 200)
@@ -1321,5 +1375,7 @@ if (Get-ScheduledTask -TaskName 'DSCBoot' -ErrorAction SilentlyContinue)
 
 Stop-Transcript
 
-Write-Verbose "Client Bootstrap process is complete!"
+Move-Item -Path $LogPath -Destination $InstallPath -Verbose
+
+Write-Verbose "DSC Automation Bootstrap process is complete!"
 #endregion

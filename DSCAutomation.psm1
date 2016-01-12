@@ -48,7 +48,7 @@ function Protect-DSCAutomationSettings
     (
         # Destination path for DSC Automation secure settings file
         [string]
-        $Path = (Join-Path ([System.Environment]::GetEnvironmentVariable("defaultPath","Machine")) "DSCAutomationSettings.xml"),
+        $Path = (Join-Path ([System.Environment]::GetEnvironmentVariable("DSCAutomationPath","Machine")) "DSCAutomationSettings.xml"),
 
         # Certificate hash with which to ecrypt the settigns
         [Parameter(Mandatory=$true)]
@@ -104,12 +104,12 @@ function Protect-DSCAutomationSettings
     {
         Write-Verbose "Existing settings file found - making a backup..."
         $TimeDate = (Get-Date -Format ddMMMyyyy_hhmmss).ToString()
-        Move-Item $Path -Destination ("$Path`-$TimeDate.bak") -Force
+        Move-Item $Path -Destination ("$Path`-$TimeDate.bak") -Force -Verbose:($PSBoundParameters['Verbose'] -eq $true)
     }
     
     # Save the encrypted databag as a native PS hashtable object
     Write-Verbose "Saving encrypted settings file to $Path"
-    Export-Clixml -InputObject $DSCAutomationSettings -Path $Path -Force
+    Export-Clixml -InputObject $DSCAutomationSettings -Path $Path -Force -Verbose:($PSBoundParameters['Verbose'] -eq $true)
 }
 
 <#
@@ -130,7 +130,7 @@ function Unprotect-DSCAutomationSettings
     (
         # Source path for the secure settings file to override the default location
         [string]
-        $Path = (Join-Path ([System.Environment]::GetEnvironmentVariable("defaultPath","Machine")) "DSCAutomationSettings.xml")
+        $Path = (Join-Path ([System.Environment]::GetEnvironmentVariable("DSCAutomationPath","Machine")) "DSCAutomationSettings.xml")
     )
 
     Write-Verbose "Importing the settings databag from $Path"
@@ -217,11 +217,11 @@ function Get-DSCSettingValue
     # Decrypt contents ofthe DSCAutomation configuration file
     if ($PSBoundParameters.ContainsKey('Path'))
     {
-        $DSCSettings = Unprotect-DSCAutomationSettings -Path $Path
+        $DSCSettings = Unprotect-DSCAutomationSettings -Path $Path -Verbose:($PSBoundParameters['Verbose'] -eq $true)
     }
     else
     {
-        $DSCSettings = Unprotect-DSCAutomationSettings
+        $DSCSettings = Unprotect-DSCAutomationSettings -Verbose:($PSBoundParameters['Verbose'] -eq $true)
     }
 
     if ($ListAvailable.IsPresent)
@@ -316,15 +316,15 @@ function Invoke-DSCPullConfigurationSync
 
         # Enable extra logging to the event log
         [switch]
-        $UseLog = $false,
+        $UseLog = $true,
 
         # Name of the event log to use for logging
         [string]
         $LogName = (Get-DSCSettingValue "LogName").LogName,
 
-        # Path to folder where t ostore the checksum file
+        # Path to folder where to store the checksum file
         [string]
-        $HashPath = $InstallPath,
+        $HashPath = (Join-Path $InstallPath "Temp"),
 
         # Force pull server configuration generation
         [switch]
@@ -345,16 +345,11 @@ function Invoke-DSCPullConfigurationSync
     # Ensure that we are using the most recent $path variable
     $env:path = [System.Environment]::GetEnvironmentVariable("Path","Machine")
     
-    # Setup our path variables
-    $ConfDir = Join-Path $InstallPath $GitRepoName
-    $PullConf = Join-Path $ConfDir $PullServerConfig
-    $GitDir = "$ConfDir\.git"
-
     # Delay Pull server conf regen until ongoing LCM run completes
     Write-Verbose "Checking LCM State..."
     $LCMStates = @("Idle","PendingConfiguration")
-    $LCMtate = (Get-DscLocalConfigurationManager).LCMState
-    if ($LCMStates -notcontains $LCMtate)
+    $LCMState = (Get-DscLocalConfigurationManager).LCMState
+    if ($LCMStates -notcontains $LCMState)
     {
         if ($UseLog)
         {
@@ -362,30 +357,39 @@ function Invoke-DSCPullConfigurationSync
         }
         Do
         {
-            $LCMtate = (Get-DscLocalConfigurationManager).LCMState
+            $LCMState = (Get-DscLocalConfigurationManager).LCMState
             Write-Verbose "LCM State is $LCMState "
             Sleep -Seconds 5
-            $LCMtate = (Get-DscLocalConfigurationManager).LCMState
-        } while ($LCMStates -notcontains $LCMtate)
+            $LCMState = (Get-DscLocalConfigurationManager).LCMState
+        } while ($LCMStates -notcontains $LCMState)
     }
     Write-Verbose "Getting latest changes to configuration repository..."
-    & git --git-dir=$GitDir pull
+    # Setup our path variables
+    $ConfDir = Join-Path $InstallPath $GitRepoName
+    $PullConf = Join-Path $ConfDir $PullServerConfig
+    Push-Location -Path $ConfDir
+    & git pull
+    Pop-Location
 
+    # Check pull server DSC configuration
     $CurrentHash = (Get-FileHash $PullConf).hash
-    $HashFilePath = (Join-Path $HashPath $($PullServerConfig,'hash' -join '.'))
-    # if  $PullConf checksum does not match
+    $HashFilePath = (Join-Path $HashPath $($PullServerConfig,'checksum' -join '.'))
     if( -not (Test-ConfigFileHash -file $PullConf -hash $HashFilePath) -or ($Force))
     {
-        Write-Verbose "Executing Pull server DSC configuration..."
+        Write-Verbose "Executing Pull server DSC configuration"
+        if ($UseLog)
+        {
+            Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 2003 -EntryType Information -Message "Executing Pull server DSC configuration"
+        }
         & $PullConf
         Set-Content -Path $HashFilePath -Value (Get-FileHash -Path $PullConf).hash
     }
     else
     {
-        Write-Verbose "Skipping pull server DSC script execution as it was not modified since previous run"
+        Write-Verbose "Skipping processing of Pull server configuration because it has not been modified"
         if ($UseLog)
         {
-            Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 2003 -EntryType Information -Message "Skipping Pull server config as it was not modified"
+            Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 2003 -EntryType Information -Message "Skipping processing of Pull server configuration because it has not been modified"
         }
     }
     if ($UseLog)
@@ -521,7 +525,6 @@ function Submit-DSCClientRegistration
 function Invoke-DSCClientRegistration
 {
     [CmdletBinding()]
-    [OutputType([int])]
     Param
     (
         # Full path to registered client data file
@@ -661,7 +664,7 @@ function Invoke-DSCClientRegistration
 
     if ($GenerateMof)
     {
-        Start-DSCClientMOFGeneration -Verbose
+        Start-DSCClientMOFGeneration -Verbose:($PSBoundParameters['Verbose'] -eq $true)
     }
 }
 
@@ -683,22 +686,39 @@ function Remove-ClientMofFiles
         [string]
         $ConfigID,
 
+        # Name of the event log to use for logging
+        [string]
+        $LogName = (Get-DSCSettingValue "LogName")["LogName"],
+
+        # Enable extra logging to the event log
+        [switch]
+        $UseLog = $true,
+
         [Parameter(Mandatory=$false)]
         [string]
         $MOFDestPath = "$env:ProgramFiles\WindowsPowerShell\DscService\Configuration"
     )
+    $LogSourceName = $MyInvocation.MyCommand.Name
+    if (($UseLog) -and -not ([System.Diagnostics.EventLog]::SourceExists($LogSourceName)) ) 
+    {
+        [System.Diagnostics.EventLog]::CreateEventSource($LogSourceName, $LogName)
+    }
 
     $MofFile = (($MofPath,$ConfigID -join '\'),'mof' -join '.')
     $MofFileHash = ($MofFile,'checksum' -join '.')
         
     if( Test-Path $MofFile )
     {
-        Remove-Item $MofFile -Force -ErrorAction SilentlyContinue
+        Remove-Item $MofFile -Force -ErrorAction SilentlyContinue -Verbose:($PSBoundParameters['Verbose'] -eq $true)
     }
         
     if( Test-Path $MofFileHash )
     {
-        Remove-Item $MofFileHash -Force -ErrorAction SilentlyContinue
+        Remove-Item $MofFileHash -Force -ErrorAction SilentlyContinue -Verbose:($PSBoundParameters['Verbose'] -eq $true)
+    }
+    if ($UseLog)
+    {
+        Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 1100 -EntryType Information -Message "Removed client mof files `n $MofFile `n $MofFileHash"
     }
 }
 
@@ -729,7 +749,7 @@ function Start-DSCClientMOFGeneration
         $ConfigPath = (Join-Path $InstallPath ((Get-DSCSettingValue GitRepoName)["GitRepoName"])),
         
         [string]
-        $configHashPath = (Join-Path $InstallPath "temp"),
+        $ConfigHashPath = (Join-Path $InstallPath "temp"),
 
         # Name of the event log to use for logging
         [string]
@@ -746,18 +766,18 @@ function Start-DSCClientMOFGeneration
     }
 
     Write-Verbose "Reading the node data file.."
-    $nodesData = Get-Content $NodeDataPath -Raw | ConvertFrom-Json
+    $NodesData = Get-Content $NodeDataPath -Raw | ConvertFrom-Json
 
     # Remove mof & checksums that no longer exist in client data file
     # First create an exclusions list with correct format
-    $exclusions = $nodesData.Nodes.ConfigID | ForEach-Object { $_,"mof" -join ".";$_,"mof.checksum" -join "."}
+    $exclusions = $NodesData.Nodes.ConfigID | ForEach-Object { $_,"mof" -join ".";$_,"mof.checksum" -join "."}
 
     # Remove the 
     $removalList = Get-ChildItem $MOFDestPath -Exclude $exclusions
     if( $removalList )
     {
         Write-Verbose "Removing mof files for non-existent clients..."
-        Remove-Item -Path $removalList.FullName -Force
+        Remove-Item -Path $removalList.FullName -Force -Verbose:($PSBoundParameters['Verbose'] -eq $true)
     }
 
     # Check configurations for updates by comparing each config file and its hash
@@ -800,7 +820,7 @@ function Start-DSCClientMOFGeneration
             {
                 Write-Verbose "Removing $confHash"
                 Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 3013 -EntryType Information -Message "Removing $confHash"
-                Remove-Item -Path $confHash -Force
+                Remove-Item -Path $confHash -Force -Verbose:($PSBoundParameters['Verbose'] -eq $true)
             }
         }
     }
@@ -823,7 +843,7 @@ function Start-DSCClientMOFGeneration
                     Remove-ClientMofFiles -ConfigID $($server.ConfigID) -MOFDestPath $MOFDestPath
                     Write-Verbose "Calling $confFile `n $($server.NodeName) `n $($server.ConfigID)"
                     Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 3022 -EntryType Information -Message "Calling $confFile `n $($server.NodeName) `n $($server.ConfigID)"
-                    & $confFile -Node $server.NodeName -ClientID $server.ConfigID -Verbose
+                    & $confFile -Node $server.NodeName -ConfigID $server.ConfigID -Verbose
                 }
                 catch 
                 {
