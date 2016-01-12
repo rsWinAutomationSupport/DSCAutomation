@@ -870,7 +870,7 @@ function Start-DSCClientMOFGeneration
 .EXAMPLE
    Example of how to use this cmdlet
 #>
-function Invoke-DSCHouseKeeping
+function Inv oke-DSCHouseKeeping
 {
     [CmdletBinding()]
     [OutputType([int])]
@@ -891,7 +891,7 @@ function Invoke-DSCHouseKeeping
 
         # Number of days to keep old client records
         [int]
-        $Age = 30
+        $Age = (Get-DSCSettingValue "InactiveDays")["InactiveDays"]
     )
     
     $LogSourceName = $MyInvocation.MyCommand.Name
@@ -909,3 +909,4 @@ function Invoke-DSCHouseKeeping
             Remove-ClientMofFiles -ConfigID $($server.ConfigID) -MOFDestPath $MOFDestPath
         #>
 }
+
