@@ -128,6 +128,10 @@ Param
 
     [Parameter(ParameterSetName="Client",Mandatory=$false)]
     [int]
+    $RegRetryTimeout = 30,
+
+    [Parameter(ParameterSetName="Client",Mandatory=$false)]
+    [int]
     $RefreshFrequencyMins = 30,
 
     # Client: Valid FQDN Hostname or IP Address of the pull server
@@ -1340,8 +1344,8 @@ else
             {
                 Throw "Client registration did not succeed"
             }
-            Write-Verbose "Waiting 60 seconds for pull server to generate mof file..."
-            Start-Sleep -Seconds 60
+            Write-Verbose "Waiting $RegRetryTimeout seconds for pull server to generate mof file..."
+            Start-Sleep -Seconds $RegRetryTimeout
             Write-Verbose "Checking if client configuration has been generated..."
             $StatusCode = (Invoke-WebRequest -Uri $PullDSCUri -ErrorAction SilentlyContinue -UseBasicParsing).StatusCode
         }
@@ -1349,8 +1353,8 @@ else
         {
             Write-Verbose "Error retrieving client configuration: $($_.Exception.message)"
             Write-Verbose "Target pull server URI: $PullDSCUri"
-            Write-Verbose "Waiting 60 seconds before retrying..."
-            Start-Sleep -Seconds 60
+            Write-Verbose "Waiting $RegRetryTimeout seconds before retrying..."
+            Start-Sleep -Seconds $RegRetryTimeout
         }
     }
     while($StatusCode -ne 200)
