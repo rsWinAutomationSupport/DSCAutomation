@@ -704,7 +704,7 @@ function Remove-ClientMofFiles
         [System.Diagnostics.EventLog]::CreateEventSource($LogSourceName, $LogName)
     }
 
-    $MofFile = (($MofPath,$ConfigID -join '\'),'mof' -join '.')
+    $MofFile = (($MofDestPath,$ConfigID -join '\'),'mof' -join '.')
     $MofFileHash = ($MofFile,'checksum' -join '.')
         
     if( Test-Path $MofFile )
@@ -870,12 +870,15 @@ function Start-DSCClientMOFGeneration
 .EXAMPLE
    Example of how to use this cmdlet
 #>
-function Inv oke-DSCHouseKeeping
+function Invoke-DSCHouseKeeping
 {
     [CmdletBinding()]
     [OutputType([int])]
     Param
     (
+        [string]
+        $NodeDataPath = (Get-DSCSettingValue NodeDataPath)["NodeDataPath"],
+
         [string]
         $InstallPath = (Get-DSCSettingValue "InstallPath")["InstallPath"],
 
@@ -898,6 +901,68 @@ function Inv oke-DSCHouseKeeping
     if ( -not ([System.Diagnostics.EventLog]::SourceExists($LogSourceName)) ) 
     {
         [System.Diagnostics.EventLog]::CreateEventSource($LogSourceName, $LogName)
+    }
+
+
+    try
+    {
+        $StatusURI = "https://$($env:COMPUTERNAME):9080/PSDSCComplianceServer.svc/Status"
+        Write-Verbose "Attempting to retrieve Status data from $StatusURI"
+        $statusData = Invoke-WebRequest -Uri $StatusURI -ContentType "application/json" -Method Get -UseDefaultCredentials -Headers @{Accept = "application/json"}
+    }
+    catch
+    {
+        Write-Verbose "Could not retrieve status data from local Comliance server. Error message was: `n$($_.Exception.Message)"
+        Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 4010 -EntryType Error -Message "Could not retrieve status data from local Comliance server. Error message was: `n$($_.Exception.Message)"
+
+        return
+    }
+    Write-Verbose "Status data retrieved successfully"
+
+    $clients = ($statusData.Content | ConvertFrom-Json).value
+
+    $inactiveDate = (Get-Date).AddDays(-$Age)
+
+
+    #get the clients that have a last Heartbeat time that's before (i.e. less than) the inactive date
+    $nodesData = Get-Content $NodeDataPath -Raw | ConvertFrom-Json
+    $inactiveClients = $clients | Where-Object { ([datetime]$_.LastHeartbeatTime -lt $inactiveDate) -and ($_.ConfigurationId -in $nodesData.Nodes.ConfigID) }
+    Write-Verbose "$($inactiveClients.Count) Clients with a heartbeat more than $age day(s) ago ($inactiveDate) have been found."
+
+    $newNodes = @()
+    $newNodes += $nodesData.Nodes | Where-Object { $_.ConfigID -notin $inactiveClients.ConfigurationID }
+    $nodesData.Nodes = $newNodes
+    Set-Content -Path $NodeDataPath -Value ($nodesData | ConvertTo-Json)
+
+    foreach ( $client in $inactiveClients)
+    {
+        try
+        {
+            $clientCertLocation = "$InstallPath\Certificates\$($client.ConfigurationId).cer"
+            $clientCert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2
+            $clientCertBytes = [System.IO.File]::ReadAllBytes($clientCertLocation)
+            $clientCert.Import($clientCertBytes)
+            $Thumbprint = $clientCert.Thumbprint
+            Remove-Item -Path "Cert:\LocalMachine\My\$Thumbprint"
+            Write-Verbose "Certificate with Thumbprint: $Thumbprint deleted from Cert:\LocalMachine\My\"
+            Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 4020 -EntryType Information -Message "Certificate with Thumbprint $Thumbprint deleted"
+        }
+        catch
+        {
+            Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 4030 -EntryType Warning -Message "Could not delete certificate from cert store for ConfigurationID $($client.ConfigurationID) . Error message was: `n$($_.Exception.Message)"
+        }
+        try
+        {
+            $clientCertLocation = "$InstallPath\Certificates\$($client.ConfigurationId).cer"
+            Remove-Item -Path $clientCertLocation
+            Write-Verbose "Certificate file deleted from $clientCertLocation"
+            Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 4025 -EntryType Information -Message "Certificate file deleted from $clientCertLocation"
+        }
+        catch
+        {
+            Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 4035 -EntryType Warning -Message "Could not delete certificate file for ConfigurationID $($client.ConfigurationID) . Error message was: `n$($_.Exception.Message)"
+        }
+        Remove-ClientMofFiles -ConfigID $client.ConfigurationID -LogName $LogName
     }
 
 
