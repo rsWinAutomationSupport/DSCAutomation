@@ -392,6 +392,11 @@ function Invoke-DSCPullConfigurationSync
             Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 2003 -EntryType Information -Message "Skipping processing of Pull server configuration because it has not been modified"
         }
     }
+
+    Write-Verbose "Running client MOF regeneration as required"
+    Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 2004 -EntryType Information -Message "Running client MOF regeneration checks"
+    Start-DSCClientMOFGeneration -Verbose:($PSBoundParameters['Verbose'] -eq $true)
+
     if ($UseLog)
     {
         Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 2005 -EntryType Information -Message "Configuration synchronisation is complete"
