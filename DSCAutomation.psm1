@@ -839,7 +839,7 @@ function Start-DSCClientMOFGeneration
 
         if (Test-Path $confFile)
         {
-            if( !(Test-Path $MofFile) -or !(Test-Path $MofFileHash) -or !(Test-ConfigFileHash -file $mofFile -hash $mofFileHash))
+            if(!(Test-ConfigFileHash -file $mofFile -hash $mofFileHash))
             {
                 try
                 {
