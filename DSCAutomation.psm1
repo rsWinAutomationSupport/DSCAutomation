@@ -806,7 +806,7 @@ function Start-DSCClientMOFGeneration
             {
                 Write-Verbose "$confFile has been modified - regenerating affected mofs..."
                 Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 3010 -EntryType Information -Message "$confFile has been modified - regenerating affected mofs..."
-                foreach( $server in $($allServers | Where-Object ClientConfig -eq $config) )
+                foreach( $server in $($NodesData.Nodes | Where-Object ClientConfig -eq $config) )
                 {
                     Write-Verbose "Removing outdated mof file for $($server.ClientName) - $($server.ConfigID)"
                     Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 3011 -EntryType Information -Message "Removing outdated mof file for $($server.ClientName) - $($server.ConfigID)"
