@@ -33,7 +33,7 @@ Param
 
     # main DSCAutomation module git branch
     [string]
-    $BootModuleGitBranch = "aa-updates",
+    $BootModuleGitBranch = "master",
 
     # URL for the Zip file to download the main DSCAutomation module
     [string]
