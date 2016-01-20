@@ -1136,11 +1136,29 @@ if ($PullServerConfig)
     Write-Verbose "Starting Pull Server Boot DSC configuration run"
     PullBoot -BootParameters $BootParameters -OutputPath $DSCbootMofFolder
 
-    Write-Verbose "Applying initial Pull Server boot LCM configuration"
-    Set-DscLocalConfigurationManager -Path $DSCbootMofFolder -Verbose
-
     Write-Verbose "Applying initial Pull Server Boot configuration"
     Start-DscConfiguration -Path $DSCbootMofFolder -Wait -Verbose -Force
+
+    Write-Verbose "Configuring Pull Server LCM"
+    Configuration PullLCM
+    {
+        param 
+        (
+            [hashtable] $BootParameters
+        )
+        Node $env:COMPUTERNAME 
+        {
+            LocalConfigurationManager
+            {
+                AllowModuleOverwrite = 'True'
+                CertificateID        = (Get-ChildItem Cert:\LocalMachine\My | Where-Object Subject -EQ "CN=$($BootParameters.PullServerAddress)").Thumbprint
+                ConfigurationMode    = 'ApplyAndAutoCorrect'
+                RebootNodeIfNeeded   = 'True'
+            }
+        } 
+    }
+    PullLCM -BootParameters $BootParameters -OutputPath $DSCbootMofFolder -Verbose
+    Set-DscLocalConfigurationManager -Path $DSCbootMofFolder -Verbose
     
     Write-Verbose "Running DSC config to install extra DSC modules as defined in rsPlatform"
     Install-PlatformModules

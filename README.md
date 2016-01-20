@@ -4,6 +4,9 @@ A suite of tools for fully automated deployments of a DSC Pull server and its cl
 
 ### Changelog
 
+#### 1.0.1
+- Fix LCM CertificateID configuration on Pull server  
+
 #### 1.0.0 
 - Initial release closely based on the rsBoot POC by Rackspace Windows Automation team.
 - Created a shared library of functions and cmdlets for use as part of the pull server and client management process
