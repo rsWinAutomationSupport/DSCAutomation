@@ -4,7 +4,19 @@ A suite of tools for fully automated deployments of a DSC Pull server and its cl
 
 ### Changelog
 
-- Initial release closely based on the rsBoot POC by Rackspace Windows Automation team. 
+#### 1.0.1
+- Fix LCM CertificateID configuration on Pull server  
+
+#### 1.0.0 
+- Initial release closely based on the rsBoot POC by Rackspace Windows Automation team.
+- Created a shared library of functions and cmdlets for use as part of the pull server and client management process
+- Convert all management scripts to functions
+- Moved all MOF management tasks to run as part of a scheduled job, outside of the PULL DSC configuration 
+- Support integrated Arnie API service for PULL server configuration sync with GitHub and managed client registration
+- Registration client certificate now used as part of new client registrations
+- New functions to support for secrets encryption of pull server settings and client databags
+- Improvements to `boot.ps1` bootstrap script for building new pull servers and their clients
+- New housekeeping task to remove client artefacts that have not checked in for 7 days
 
 ## Example usage
 
@@ -14,7 +26,7 @@ A suite of tools for fully automated deployments of a DSC Pull server and its cl
 
 To build a pull server, use the following command and replace the <highlighted> parameters with suitable values: 
 ```PoSh
-Invoke-WebRequest 'https://raw.githubusercontent.com/rsWinAutomationSupport/DSCAutomation/aa-updates/bootstrap/boot.ps1' -OutFile 'c:\boot.ps1'
+Invoke-WebRequest 'https://raw.githubusercontent.com/rsWinAutomationSupport/DSCAutomation/master/bootstrap/boot.ps1' -OutFile 'c:\boot.ps1'
 & 'C:\Boot.ps1' -PullServerConfig 'rsPullServer.ps1' -GitOAuthToken "<YourGitOAuthToken>" -GitOrgName "<GitOrgName" -GitRepoName "<ConfigRepoName>" -GitRepoBranch "<ConfigRepoBranch>" -Verbose
 ```
 To use a DNS name for your pull server, please remember to provide this optional parameter at the time of executing boot script: `-PullServerAddress "pull.domain.local"` 
@@ -29,12 +41,9 @@ The above will generate a base64-encoded string that contains the registration c
 
 ```PoSh
 $RegKey = @'
-MIIKMwIBAzCCCfMGCSqGSIb3DQEHAaCCCeQEggngMIIJ3DCCBh0GCSqGSIb3DQEHAaCCBg4EggYKMIIGBjCCBgIGCyqGSIb3DQEMCgECoIIE/jCCBPowHAY
-KKoZIhvcNAQwBAzAOBAgEYdBPR527sgICB9AEggTYTK0NtuqXfHtizGUgK4aAdJyw0ZUi88h89nB3dRlYvzcUkJgQD/TyfmxaJ9PdvyGWvSOnlmvEPLSiye
-... <truncated> ...
-IF/NQL/LmshdOXvoyZGapUqAqkphAu3h92JDCmwO6FOiyxrdYw5G1AcpqoiWTtvQdLnvM0mgNrGMpmwwNzAfMAcGBSsOAwIaBBRv2uFymsO1RSr496lJvf=
+<Client registration certificate base64 string as provided by Get-DSCClientRegistrationCert on PULL server>
 '@
-Invoke-WebRequest 'https://raw.githubusercontent.com/rsWinAutomationSupport/DSCAutomation/aa-updates/bootstrap/boot.ps1' -OutFile 'c:\boot.ps1'
+Invoke-WebRequest 'https://raw.githubusercontent.com/rsWinAutomationSupport/DSCAutomation/master/bootstrap/boot.ps1' -OutFile 'c:\boot.ps1'
 & c:\boot.ps1 -PullServerAddress '<PullServerIP_or_FQDN>' -ClientConfig 'client.ps1' -Verbose -RegistrationKey $RegKey
 
 ```
