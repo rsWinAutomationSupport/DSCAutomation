@@ -980,3 +980,65 @@ function Invoke-DSCHouseKeeping
         #>
 }
 
+<#
+.Synopsis
+   Check DSC Client registration status
+.DESCRIPTION
+   Used to Check DSC Client registration status and try to submit registration if the MOF is missing on the pull server
+.EXAMPLE
+   This cmdlet should idealy be used as part of a Scheduled Task/Job to regularly check for client registration status. 
+   See template in SampleConfiguration for relevant DSC configuration.
+#>
+function Confirm-DSCClientRegistration
+{
+    [CmdletBinding()]
+    Param
+    (
+        # Client ConfigID that belongs to the client
+        [Parameter(Mandatory=$false)]
+        $ConfigID = (Get-DSCSettingValue -Key "ConfigID").ConfigID,
+
+        # Name of the PSDSCPullServer
+        [Parameter(Mandatory=$false)]
+        $PullServerName = (Get-DSCSettingValue -Key "PullServerName").PullServerName,
+
+        # Port which the PSDSCPullServer is using
+        [Parameter(Mandatory=$false)]
+        $PullServerPort = (Get-DSCSettingValue -Key "PullServerPort").PullServerPort,
+
+        # Name of the event log to use for logging
+        [string]
+        $LogName = (Get-DSCSettingValue "LogName").LogName
+    )
+    
+    $LogSourceName = $MyInvocation.MyCommand.Name
+    if ( -not ([System.Diagnostics.EventLog]::SourceExists($LogSourceName)) ) 
+    {
+        [System.Diagnostics.EventLog]::CreateEventSource($LogSourceName, $LogName)
+    }
+
+    $PullDSCUri = "https://$($PullServerName):$($PullServerPort)/PSDSCPullServer.svc/Action(ConfigurationId=`'$ConfigID`')/ConfigurationContent"
+    try
+    {
+        $StatusCode = (Invoke-WebRequest -Uri $PullDSCUri -ErrorAction SilentlyContinue -UseBasicParsing).StatusCode
+    }
+    catch
+    {
+        Write-Verbose "Web request status code is: $StatusCode"
+    }
+
+    if ($StatusCode -eq 200)
+    {
+        $LogMsg = "DSC Client configuration was found on the Pull server - no further action required"
+        Write-Verbose $LogMsg
+        Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 1500 -EntryType Information -Message $LogMsg
+    }
+    else
+    {
+        $LogMsg = "DSC Client configuration was not found on the Pull server - executing Submit-DSCClientRegistration process..."
+        Write-Verbose $LogMsg
+        Write-Eventlog -LogName $LogName -Source $LogSourceName -EventID 1501 -EntryType Warning -Message $LogMsg
+        
+        Submit-DSCClientRegistration -Verbose:($PSBoundParameters['Verbose'] -eq $true)
+    }
+}
