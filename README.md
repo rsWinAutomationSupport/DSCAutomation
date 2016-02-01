@@ -4,6 +4,9 @@ A suite of tools for fully automated deployments of a DSC Pull server and its cl
 
 ### Changelog
 
+#### unreleased
+- Added Confirm-DSCClientRegistration cmdlet to be used in a scheduled task on clients
+
 #### 1.0.1
 - Fix LCM CertificateID configuration on Pull server  
 
