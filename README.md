@@ -29,7 +29,7 @@ A suite of tools for fully automated deployments of a DSC Pull server and its cl
 
 To build a pull server, use the following command and replace the <highlighted> parameters with suitable values: 
 ```PoSh
-Invoke-WebRequest 'https://raw.githubusercontent.com/rsWinAutomationSupport/DSCAutomation/master/bootstrap/boot.ps1' -OutFile 'c:\boot.ps1'
+Invoke-WebRequest 'https://raw.githubusercontent.com/rsWinAutomationSupport/DSCAutomation/1.0.1/bootstrap/boot.ps1' -OutFile 'c:\boot.ps1'
 & 'C:\Boot.ps1' -PullServerConfig 'rsPullServer.ps1' -GitOAuthToken "<YourGitOAuthToken>" -GitOrgName "<GitOrgName" -GitRepoName "<ConfigRepoName>" -GitRepoBranch "<ConfigRepoBranch>" -Verbose
 ```
 To use a DNS name for your pull server, please remember to provide this optional parameter at the time of executing boot script: `-PullServerAddress "pull.domain.local"` 
@@ -46,7 +46,7 @@ The above will generate a base64-encoded string that contains the registration c
 $RegKey = @'
 <Client registration certificate base64 string as provided by Get-DSCClientRegistrationCert on PULL server>
 '@
-Invoke-WebRequest 'https://raw.githubusercontent.com/rsWinAutomationSupport/DSCAutomation/master/bootstrap/boot.ps1' -OutFile 'c:\boot.ps1'
+Invoke-WebRequest 'https://raw.githubusercontent.com/rsWinAutomationSupport/DSCAutomation/1.0.1/bootstrap/boot.ps1' -OutFile 'c:\boot.ps1'
 & c:\boot.ps1 -PullServerAddress '<PullServerIP_or_FQDN>' -ClientConfig 'client.ps1' -Verbose -RegistrationKey $RegKey
 
 ```
