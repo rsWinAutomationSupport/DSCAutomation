@@ -1010,7 +1010,7 @@ function Install-PlatformModules
 <#
  Housekeeping function for bootstrap
 #>
-function Start-BootstrapHosekeeping
+function Start-BootstrapHousekeeping
 {
     [CmdletBinding()]
     Param
@@ -1024,7 +1024,7 @@ function Start-BootstrapHosekeeping
         # DSCAutomation install folder
         [string]$InstallPath
     )
-    Write-Verbose "Pereforming boot process housekeeping"
+    Write-Verbose "Performing boot process housekeeping"
 
     if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue)
     {
@@ -1257,7 +1257,7 @@ if ($PullServerConfig)
         Write-Verbose "Error in Pull Server DSC configuration: $($_.Exception)"
     }
 
-    Start-BootstrapHosekeeping -TaskName 'DSCBoot' -LogPath $LogPath -InstallPath $InstallPath -Verbose
+    Start-BootstrapHousekeepingg -TaskName 'DSCBoot' -LogPath $LogPath -InstallPath $InstallPath -Verbose
 }
 else
 {
@@ -1413,7 +1413,7 @@ else
     Write-Verbose "Configuring Client LCM"
     Set-DscLocalConfigurationManager -Path $DSCbootMofFolder -Verbose
 
-    Start-BootstrapHosekeeping -TaskName 'DSCBoot' -LogPath $LogPath -InstallPath $InstallPath -Verbose
+    Start-BootstrapHousekeeping -TaskName 'DSCBoot' -LogPath $LogPath -InstallPath $InstallPath -Verbose
     
     Write-Verbose "Applying final Client DSC Configuration from Pull server - $PullServerName"
     Update-DscConfiguration -Wait -Verbose
