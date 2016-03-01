@@ -1257,7 +1257,7 @@ if ($PullServerConfig)
         Write-Verbose "Error in Pull Server DSC configuration: $($_.Exception)"
     }
 
-    Start-BootstrapHousekeepingg -TaskName 'DSCBoot' -LogPath $LogPath -InstallPath $InstallPath -Verbose
+    Start-BootstrapHousekeeping -TaskName 'DSCBoot' -LogPath $LogPath -InstallPath $InstallPath -Verbose
 }
 else
 {
