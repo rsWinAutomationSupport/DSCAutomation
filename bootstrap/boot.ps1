@@ -33,7 +33,7 @@ Param
 
     # main DSCAutomation module git branch
     [string]
-    $BootModuleGitBranch = "master",
+    $BootModuleGitBranch = "1.0.2",
 
     # URL for the Zip file to download the main DSCAutomation module
     [string]
@@ -1007,7 +1007,37 @@ function Install-PlatformModules
 #########################################################################################################
 #region Helper functions
 #########################################################################################################
+<#
+ Housekeeping function for bootstrap
+#>
+function Start-BootstrapHousekeeping
+{
+    [CmdletBinding()]
+    Param
+    (
+        # TaskName - name of the boot restart scheduled task
+        [string]$TaskName = 'DSCBoot',
 
+        # Location of bootstrap transcript file
+        [string]$LogPath,
+
+        # DSCAutomation install folder
+        [string]$InstallPath
+    )
+    Write-Verbose "Performing boot process housekeeping"
+
+    if (Get-ScheduledTask -TaskName $TaskName -ErrorAction SilentlyContinue)
+    {
+        Write-Verbose "Removing the $TaskName task..."
+        Unregister-ScheduledTask -TaskName $TaskName -Confirm:$false
+    }
+    
+    Stop-Transcript
+    
+    Move-Item -Path $LogPath -Destination $InstallPath -Verbose
+    
+    Write-Verbose "DSC Automation Bootstrap process is complete!"
+}
 #endregion
 
 #########################################################################################################
@@ -1226,6 +1256,8 @@ if ($PullServerConfig)
     {
         Write-Verbose "Error in Pull Server DSC configuration: $($_.Exception)"
     }
+
+    Start-BootstrapHousekeepingg -TaskName 'DSCBoot' -LogPath $LogPath -InstallPath $InstallPath -Verbose
 }
 else
 {
@@ -1380,20 +1412,10 @@ else
 
     Write-Verbose "Configuring Client LCM"
     Set-DscLocalConfigurationManager -Path $DSCbootMofFolder -Verbose
+
+    Start-BootstrapHousekeeping -TaskName 'DSCBoot' -LogPath $LogPath -InstallPath $InstallPath -Verbose
     
     Write-Verbose "Applying final Client DSC Configuration from Pull server - $PullServerName"
     Update-DscConfiguration -Wait -Verbose
 }
-
-if (Get-ScheduledTask -TaskName 'DSCBoot' -ErrorAction SilentlyContinue)
-{
-    Write-Verbose "Removing the 'DSCBoot' task..."
-    Unregister-ScheduledTask -TaskName DSCBoot -Confirm:$false
-}
-
-Stop-Transcript
-
-Move-Item -Path $LogPath -Destination $InstallPath -Verbose
-
-Write-Verbose "DSC Automation Bootstrap process is complete!"
 #endregion
