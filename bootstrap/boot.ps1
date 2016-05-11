@@ -1078,7 +1078,7 @@ if (-not (Test-Connection $NetworkTestTarget -Quiet))
     until (-not (Test-Connection $NetworkTestTarget -Quiet))
 }
 
-$WinTemp = "$env:SystemRoot\Temp"
+$WinTemp = "$env:TEMP"
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $ModuleFileName = $BootModuleZipURL.Split("/")[-1]
 $ZipPath = "$WinTemp\$ModuleFileName"
