@@ -1273,7 +1273,7 @@ else
             Write-Verbose "Connection failed - waiting for network connectivity to '$PullServerAddress' to be established..."
             Sleep -Seconds 20
         }
-        until (-not (Test-NetConnection -ComputerName $PullServerAddress -Port $PullServerPort -InformationLevel 'Detailed'))
+        until ((Test-NetConnection -ComputerName $PullServerAddress -Port $PullServerPort -InformationLevel 'Detailed').TcpTestSucceeded)
     }
     else
     {
